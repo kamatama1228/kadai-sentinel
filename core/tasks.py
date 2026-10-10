@@ -20,6 +20,9 @@ PAGE_SIZE = 50  # core_calendar_get_action_events_by_timesort の上限
 def local_tz():
     """表示用のタイムゾーン。MOODLE_TIMEZONE(例 Asia/Tokyo)があればそれ、なければ PC の設定。"""
     name = os.environ.get("MOODLE_TIMEZONE")
+    if not name:
+        from core.config import load_env      # .env に書いた MOODLE_TIMEZONE も使う
+        name = load_env().get("MOODLE_TIMEZONE")
     if name:
         try:
             from zoneinfo import ZoneInfo
