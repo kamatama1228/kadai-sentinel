@@ -1,0 +1,23 @@
+name = "kadai-sentinel"
+main = "src/index.ts"
+compatibility_date = "2025-09-01"
+workers_dev = false   # 外から呼べる URL は作らない
+
+# 1分おきに起動し、「次に確認する時刻」のときだけ Moodle を確認する(それ以外はすぐ終わる)
+[triggers]
+crons = ["* * * * *"]
+
+# 通知の状態(どれを送ったか、次に確認する時刻)
+# id は `npx wrangler kv namespace create STATE` で表示されたものに置き換える
+[[kv_namespaces]]
+binding = "STATE"
+id = "ここに_KV_の_id"
+
+# notify.toml を文字列として読み込む
+[[rules]]
+type = "Text"
+globs = ["**/*.toml"]
+fallthrough = true
+
+[observability]
+enabled = true

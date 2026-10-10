@@ -1,0 +1,37 @@
+# ===== 認証情報・個人設定(非公開リポジトリにも入れない) =====
+.env
+.env.*
+!.env.example
+notify.toml
+worker/wrangler.toml
+*.local.*
+.denylist
+
+# ===== 状態・資料・提出物 =====
+state/
+*.state.json
+materials/
+submissions/
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# ===== Node / Cloudflare =====
+node_modules/
+.wrangler/
+.dev.vars
+
+# ===== OS / エディタ =====
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# 追加機能(公開版には含めない)
+addons/

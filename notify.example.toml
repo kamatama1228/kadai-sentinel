@@ -1,0 +1,70 @@
+# 通知のルール(授業ごと)
+# このファイルを notify.toml にコピーして使う:  cp notify.example.toml notify.toml
+# notify.toml は授業IDや時間割を含む個人設定なので Git には入らない。
+# 授業IDは `uv run moodle courses` で確認できる。
+#
+# events(共有チャンネルに流すもの)
+#   new           新しい課題・小テストが出た
+#   scheduled     公開日時が決まっている小テスト・課題が登録された(「〇時に公開予定」)
+#   open          受付・公開が始まった瞬間(授業中の短い小テスト向け)
+#   due_changed   締切が変わった
+# remind          締切のどれだけ前に知らせるか。"7d" "1d" "3h" "30m" のほか、"@16:30"(締切日のその時刻)
+# morning         当日の朝(morning_at)に「今日〇時から小テスト」と予告する
+# kinds           対象にする種類。既定は ["小テスト", "課題"]。"アンケート" なども指定できる
+# match           名前にこれを含むものだけを対象にする(空なら全部)
+# enabled=false   この授業は共有チャンネルに流さない
+
+[default]
+enabled = false            # ここに書いていない授業は共有チャンネルに流さない
+
+# 例1: 授業中に短時間だけ公開される小テストがある授業
+[course.10001]
+name = "例:〇〇概論"
+enabled = true
+events = ["new", "scheduled", "open", "due_changed"]
+morning = true
+
+# 例2: レポートが出る授業。締切の1週間前と前日に知らせる
+[course.10002]
+name = "例:〇〇演習"
+enabled = true
+events = ["new", "due_changed"]
+remind = ["7d", "1d"]
+
+# 例3: 特定のアンケートだけを流したい授業
+[course.10003]
+name = "例:ゼミ配属"
+enabled = true
+kinds = ["アンケート", "課題", "小テスト"]
+match = ["希望調査"]
+events = ["new", "scheduled", "open", "due_changed"]
+remind = ["1d", "3h"]
+
+# Moodle に掲載される前から分かっている締切を手で登録する(掲載されたら自動でそちらに切り替わる)
+# [[event]]
+# title = "例:配属希望調査"
+# course_id = 10003
+# course = "例:ゼミ配属"
+# open = "2026-11-02 00:00"
+# due = "2026-11-06 10:30"
+# remind = ["1d", "3h"]
+# match = ["希望調査"]
+
+[personal]
+# 自分専用チャンネルへの、未提出課題のリマインド
+remind = ["1d", "3h"]
+exclude = []               # 個人通知もいらない授業のID
+
+# 授業ごとに個人リマインドの時刻を変える例
+# [personal.course.10004]
+# remind = ["@16:30"]
+
+[watch]
+utc_offset = 9             # 時差(日本は 9)。Cloudflare 版で日時を解釈するのに使う
+schedule = ["10:00", "22:00"]   # ふだんはこの時刻にだけ確認する
+fast = "1m"                # 下の時間帯と、小テスト公開の前後はこの間隔
+morning_at = "10:00"       # 当日の予告を送る時刻
+# 1分おきに確認する時間帯(短い小テストがある授業の時間など)。曜日は mon tue wed thu fri sat sun
+fast_windows = [
+  # { days = ["thu"], start = "13:00", end = "15:00", note = "例:〇〇概論" },
+]
