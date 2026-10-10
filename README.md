@@ -1,94 +1,112 @@
 # kadai-sentinel
 
-**課題の見張り番。** Moodle の課題・小テスト・締切を見張って **Discord に知らせ**、手元の AI(Claude・ChatGPT・Gemini など)から **Moodle の情報を読めるようにする**ためのツールです。
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
+![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020)
 
-Moodle を使っている大学・学校ならどこでも、設定を変えるだけで使えます。
-(Moodle は Moodle Pty Ltd の商標です。このツールは Moodle 公式とは関係ありません。)
+**課題の見張り番。** Moodle の課題・小テスト・締切を見張って Discord に知らせ、手元の AI から Moodle の情報を読めるようにするツールです。
 
-## できること
 
-- **Discord 通知**:新しい課題、締切の変更、締切前のリマインド、授業中に短時間だけ公開される小テストの「公開された瞬間」の通知
-  - 友達との共有チャンネル(授業の情報)と、自分専用チャンネル(自分の未提出課題)を分けて送れる
-  - 授業ごとに、何をいつ知らせるかを `notify.toml` で決められる
-  - Cloudflare Workers(無料)で 24 時間動かせる。PC が閉じていても届く
-  - Moodle を確認するのは決めた時刻だけ(ふだんは 1 日 2 回、短い小テストがある時間帯だけ 1 分おき)。大学のサーバーに優しい
-- **AI から Moodle を読む**:やること一覧、授業一覧、課題の詳細、配布資料のダウンロード
-  - Claude Code / Codex CLI / Gemini CLI などの「コマンドを実行できる AI」は、`AGENTS.md` を読んでこのツールを使える
-- **読み取り専用**:Moodle に何かを書き込んだり提出したりはしません
+授業中に数分だけ公開される出席小テストを見逃さない。レポートの締切を友達と共有する。配布資料を AI に要約させる。そのために作りました。Moodle を使っている大学・学校なら、設定を変えるだけで使えます。
 
-## 必要なもの
+## 特徴
 
-- Python 3.11 以上と [uv](https://docs.astral.sh/uv/)
-- (Discord 通知を 24 時間動かす場合)Node.js と Cloudflare の無料アカウント
-- あなたの大学の Moodle で、モバイルアプリ用の Web サービスが有効になっていること(公式 Moodle アプリが使えれば、たいてい有効です)
+- **見逃さない通知**:新しい課題、締切の変更、締切前のリマインド、小テストが「公開された瞬間」の通知
+- **授業ごとにルールを決められる**:何を・いつ知らせるかを `notify.toml` に書くだけ(「1 週間前と前日」「締切日の 16:30」なども可)
+- **共有と個人を分ける**:友達との共有チャンネルには授業の情報だけ、自分の提出状況は自分専用チャンネルだけに
+- **大学のサーバーに優しい**:Moodle を確認するのはふだん 1 日 2 回。短い小テストがある時間帯だけ 1 分おき
+- **24 時間・無料**:Cloudflare Workers の無料枠で動く。PC を閉じていても届く
+- **AI から使える**:Claude Code・Codex CLI・Gemini CLI などが `AGENTS.md` を読んで、そのまま使える
+- **読み取り専用**:Moodle には何も書き込みません
 
-## 1. セットアップ
+## 仕組み
+
+```mermaid
+flowchart LR
+    M[(Moodle<br/>Web サービス)] -->|課題・小テスト・締切| C[core<br/>取得と整形]
+    C --> CLI[CLI<br/>uv run moodle ...]
+    C --> N[通知の判定<br/>notify.toml のルール]
+    N -->|共有チャンネル| D1[Discord<br/>友達と]
+    N -->|個人チャンネル| D2[Discord<br/>自分だけ]
+    CLI --> AI[手元の AI<br/>Claude / Codex / Gemini]
+    W[Cloudflare Workers<br/>または PC 常駐] -. 決めた時刻に起動 .-> N
+```
+
+## 通知の例
+
+```
+🚨 小テストが公開されました                     ← 赤色・単独で投稿
+第3回授業小テスト
+授業  〇〇概論
+受付  10/15(木) 14:35〜14:44   残り あと 9 分   制限時間 4 分
+
+⏰ 締切まで1日を切りました
+レポート1
+授業  〇〇演習
+締切  11/06(金) 23:59
+```
+
+## クイックスタート
 
 ```bash
 uv sync
-cp .env.example .env               # MOODLE_URL を自分の大学のものに書き換える
-uv run moodle diagnose             # ログイン方式を調べる
-uv run moodle login                # ユーザー名・パスワードでログインできる大学
-uv run moodle login --sso          # SSO(学内の共通ログイン画面)を使う大学
-uv run moodle check                # 接続確認
+cp .env.example .env            # MOODLE_URL を自分の大学のものに
+uv run moodle diagnose          # ログイン方式を調べる
+uv run moodle login --sso       # SSO の大学(ID・パスワード方式なら --sso なし)
+uv run moodle tasks             # やること一覧が出れば OK
 ```
 
-パスワードは保存しません。取得したトークンだけが `.env` に保存されます。
+パスワードは保存しません。トークンだけが `.env` に入ります。
 
-### SSO の大学でのトークン取得
+<details>
+<summary>SSO の大学でのトークンの取り方</summary>
 
-`login --sso` を実行すると URL が表示されます。
+1. ブラウザで開発者ツール(F12)→「ネットワーク」タブ →「ログを保持」にチェック
+2. `login --sso` が表示した URL を開いて、いつもの画面でログイン(ログイン済みなら真っ白な画面になる)
+3. 一覧の `launch.php` → レスポンスヘッダーの `location: moodlemobile://token=...` をコピー
+4. ターミナルに戻って Enter(Windows はクリップボードから自動で読み取る)
 
-1. ブラウザで開発者ツール(F12)を開き、「ネットワーク」タブで「ログを保持」にチェックを入れる
-2. 表示された URL を開き、いつもの画面でログインする(すでにログイン済みなら真っ白な画面になる)
-3. 一覧の `launch.php` → レスポンスヘッダーの `location: moodlemobile://token=...` をコピーする
-4. ターミナルに戻って Enter(Windows はクリップボードから読み取る。それ以外は貼り付け)
+公式 Moodle アプリと同じログインの仕組みです。
+</details>
 
-これは公式 Moodle アプリと同じログインの仕組みです。
+## コマンド
 
-## 2. 使い方
+| コマンド | 内容 |
+| --- | --- |
+| `uv run moodle tasks` | やること一覧(`--url` でリンク、`--json` で機械向け) |
+| `uv run moodle courses` | 履修中の授業と授業 ID |
+| `uv run moodle assign 課題名` | 課題の設定と自分の提出状況 |
+| `uv run moodle files` | 配布資料を `materials/` に取得(更新分だけ) |
+| `uv run moodle notify --test personal` | Discord 通知の見た目を確認 |
 
-```bash
-uv run moodle tasks                # やること一覧(--url でリンク、--json で機械向け)
-uv run moodle courses              # 履修中の授業と授業ID
-uv run moodle assign 課題名        # 課題の設定と自分の提出状況
-uv run moodle files                # 配布資料を materials/ に取得(更新分だけ)
-uv run moodle files --course 授業名 --dry-run
-```
-
-## 3. AI とつなぐ
+## AI とつなぐ
 
 | 使っている AI | つなぎ方 |
 | --- | --- |
-| Claude Code / Codex CLI / Gemini CLI | このフォルダで起動するだけ。`AGENTS.md`(と `CLAUDE.md` / `GEMINI.md`)を読んで、`uv run moodle ...` を実行してくれる |
-| Claude デスクトップアプリ(PC 連携) | このフォルダをチャットに接続すると、スマホからでも「今週の課題は?」と頼める |
-| チャットだけの AI | `uv run moodle tasks --json` の結果や `materials/` の資料を貼り付けて使う |
+| Claude Code / Codex CLI / Gemini CLI | このフォルダで起動するだけ。`AGENTS.md` を読んでコマンドを使う |
+| Claude デスクトップアプリ | このフォルダをチャットに接続すると、スマホからでも頼める |
+| その他 | `uv run moodle tasks --json` の結果や資料を貼り付ける |
 
-「今週の締切を教えて」「〇〇の第2回の資料を要約して」のように頼めます。
+「今週の締切は?」「〇〇の第 2 回の資料を要約して」のように頼めます。
 
-## 4. Discord 通知
+## Discord 通知
 
-1. 通知を流したい Discord チャンネルで、連携サービス → ウェブフック から URL を作り、`.env` の `DISCORD_WEBHOOK_URL` に書く(自分専用のリマインドも使うなら `PERSONAL_WEBHOOK_URL` も)
-2. `cp notify.example.toml notify.toml` して、授業ID とルールを書く(書き方はファイル内のコメント)
-3. `uv run moodle notify --test personal` で見た目を確認する
+1. Discord のチャンネル設定 → 連携サービス → ウェブフック で URL を作り、`.env` に書く(共有用 `DISCORD_WEBHOOK_URL`、自分用 `PERSONAL_WEBHOOK_URL`)
+2. `cp notify.example.toml notify.toml` して、授業ごとのルールを書く(書き方はファイル内のコメント)
 
-### 24 時間動かす(Cloudflare Workers、無料)
+### Cloudflare Workers で 24 時間動かす(無料)
 
 ```bash
 cd worker
 npm install
 npx wrangler login
-cp wrangler.example.toml wrangler.toml    # wrangler.toml は自分用(Git に入らない)
+cp wrangler.example.toml wrangler.toml
 npx wrangler kv namespace create STATE    # 表示された id を wrangler.toml に書く
 npx wrangler deploy
-npm run secrets                           # .env の URL・トークン・Webhook を Cloudflare に登録(値は表示しない)
-npm run tail                              # 1 分以内に「初回: 状態を記録しました」が出れば OK
+npm run secrets                           # .env の値を Cloudflare に登録(画面には出ない)
 ```
 
-- 1 分おきに起動しますが、Moodle を確認するのは「次に確認する時刻」(既定は 10:00 と 22:00、リマインドや小テストの時刻、`fast_windows` の時間帯)だけです。それ以外の起動はすぐ終わります
-- 起動は 1 日約 1,440 回で、無料枠(1 日 10 万回)の約 1.4% です
-- `notify.toml` を変えたら `npx wrangler deploy` で反映します
-- 外から呼べる URL は作りません。動かすのは各自の Cloudflare アカウントです
+1 分おきに起動しますが、Moodle を確認するのは決めた時刻だけで、それ以外はすぐ終わります(無料枠の約 1.4%)。`notify.toml` を変えたら `npx wrangler deploy` で反映します。
 
 ### PC で動かす(Windows)
 
@@ -96,17 +114,20 @@ npm run tail                              # 1 分以内に「初回: 状態を�
 powershell -ExecutionPolicy Bypass -File scripts\install-watch.ps1
 ```
 
-ログオン時に自動で起動します。PC が止まっているあいだは通知も止まります。Cloudflare 版と同時に動かすと通知が重複するので、どちらか一方にしてください。
+ログオン時に自動で起動します。Cloudflare 版と同時に動かすと通知が重複するので、どちらか一方で。
 
+## 設計
+
+考え方や判断の理由は [docs/DESIGN.md](docs/DESIGN.md) にまとめています。
 
 ## 注意
 
-- **使う前に、自分の大学の情報システム利用規約やガイドラインを確認してください。** このツールは大学・Moodle 公式とは関係ありません。
-- **トークンはパスワードと同じです。** `.env` を人に渡したり、コミットしたりしないでください。
-- **授業資料の著作権は担当の先生にあります。** `materials/` の資料を、その授業を履修していない人に共有しないでください(`materials/` は Git に入りません)。
-- **大学のサーバーに負荷をかけないでください。** 確認間隔を短くしすぎないこと。1 分おきは、本当に必要な時間帯だけにしてください。
-- 課題に AI を使うかどうかは、授業ごとのルールに従ってください。
+- 使う前に、自分の大学の情報システム利用規約を確認してください。このツールは大学・Moodle 公式とは関係ありません(Moodle は Moodle Pty Ltd の商標です)
+- トークンはパスワードと同じです。`.env` を人に渡したりコミットしたりしないでください
+- 授業資料の著作権は担当の先生にあります。履修していない人に共有しないでください
+- 確認の間隔を短くしすぎないでください(1 分おきは本当に必要な時間帯だけ。上限も設けています)
+- 課題に AI を使うかどうかは、授業ごとのルールに従ってください
 
 ## ライセンス
 
-MIT
+[MIT](LICENSE)
