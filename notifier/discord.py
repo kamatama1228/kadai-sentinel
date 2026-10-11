@@ -26,6 +26,7 @@ class Notice:
     url: str = ""
     fields: list[tuple[str, str]] = field(default_factory=list)
     urgent: bool = False         # 公開中の小テストなど。まとめずに必ず単独で送る
+    id: str = ""                 # 元の活動(quiz:123 など)。個人への転送で提出済みかを見るのに使う。表示には使わない
 
     def embed(self) -> dict[str, Any]:
         e: dict[str, Any] = {

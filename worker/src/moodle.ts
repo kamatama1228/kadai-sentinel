@@ -27,6 +27,7 @@ export class Moodle {
     ]);
     const res = await fetch(this.base + "/webservice/rest/server.php", {
       method: "POST", body, headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      signal: AbortSignal.timeout(30_000),     // 応答が無いまま止まらないように(次の起動と重ならないように)
     });
     if (!res.ok) throw new MoodleError(`HTTP ${res.status}`, `http${res.status}`);
     const data: any = await res.json();
@@ -138,13 +139,44 @@ const GENERIC: Record<string, string> = {
   lesson: "レッスン", workshop: "ワークショップ", h5pactivity: "H5P",
 };
 
-/** アンケートなどを、カレンダーの開始・終了予定から作る */
+/** 提出済み(課題は「提出済み」、小テストは受験完了)と Moodle で確かめられたら true。分からなければ false */
+export async function isSubmitted(m: Moodle, id: string): Promise<boolean> {
+  const [mod, inst] = id.split(":");
+  try {
+    if (mod === "assign") {
+      const r = await m.call("mod_assign_get_submission_status", { assignid: Number(inst) });
+      const s = r.lastattempt?.submission?.status ?? r.lastattempt?.teamsubmission?.status;
+      return s === "submitted";
+    }
+    if (mod === "quiz") {
+      const r = await m.call("mod_quiz_get_user_attempts", { quizid: Number(inst), status: "finished" });
+      return (r.attempts ?? []).length > 0;
+    }
+  } catch (e) {
+    console.log(`提出状況を確認できませんでした(送ります): ${id} ${e}`);
+  }
+  return false;
+}
+
+/** アンケートなどを、カレンダーの開始・終了予定から作る。
+ *  履修が外れた授業などで失敗したら、授業ごとに取り直して、取れた授業だけ使う(1つの授業のせいで全部止めない) */
 export async function fetchGeneric(m: Moodle, ids: number[], names: Map<number, string>, now: number): Promise<Activity[]> {
   if (!ids.length) return [];
-  const data = await m.call("core_calendar_get_calendar_events", {
-    events: { courseids: ids },
+  const get = (cids: number[]) => m.call("core_calendar_get_calendar_events", {
+    events: { courseids: cids },
     options: { userevents: 0, siteevents: 0, timestart: now - 30 * 86400, timeend: now + 120 * 86400 },
   });
+  let data: any;
+  try {
+    data = await get(ids);
+  } catch (e) {
+    if (ids.length === 1 || !(e instanceof MoodleError) || !e.errorcode || e.errorcode.startsWith("http")) throw e;
+    data = { events: [] };
+    for (const id of ids) {
+      try { data.events.push(...((await get([id])).events ?? [])); }
+      catch (e2) { console.log(`授業 ${id} のカレンダーを取れませんでした(この授業だけ飛ばします): ${e2}`); }
+    }
+  }
   const acts = new Map<string, Activity>();
   for (const ev of data.events ?? []) {
     const kind = GENERIC[ev.modulename];

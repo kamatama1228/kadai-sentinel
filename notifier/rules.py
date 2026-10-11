@@ -83,6 +83,8 @@ class Rules:
     fast_interval: int
     morning_at: dtime
     fast_windows: list[Window]
+    personal_mirror: bool = False          # 共有チャンネルの通知を個人チャンネルにも送る
+    mirror_skip_submitted: bool = True     # 転送する締切リマインドのうち、提出済みのものは送らない
 
     def course(self, course_id: int) -> CourseRule:
         return self.courses.get(course_id, self.default)
@@ -93,6 +95,16 @@ class Rules:
     @property
     def shared_course_ids(self) -> list[int]:
         return [cid for cid, r in self.courses.items() if r.enabled]
+
+    def personal_skips(self, course_id: int, kind: str = "", title: str = "") -> bool:
+        """個人の「未提出」リマインドを送らないもの(Worker の personalSkips と同じ)。
+        exclude した授業と、転送オンのとき共有チャンネルが扱うもの(match で絞った授業は残りも共有に従う)。"""
+        if course_id in self.personal_exclude:
+            return True
+        c = self.courses.get(course_id)
+        if not self.personal_mirror or not c or not c.enabled:
+            return False
+        return bool(c.match) or c.wants(kind, title)
 
 
 def _rule(d: dict[str, Any], base: CourseRule | None = None) -> CourseRule:
@@ -151,6 +163,8 @@ def load_rules(path: Path = CONFIG_FILE) -> Rules:
         fast_interval=fast,
         morning_at=_hm(watch.get("morning_at", "08:00")),
         fast_windows=windows,
+        personal_mirror=bool(personal.get("mirror_shared", False)),
+        mirror_skip_submitted=bool(personal.get("mirror_skip_submitted", True)),
     )
 
 

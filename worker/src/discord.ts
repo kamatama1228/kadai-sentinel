@@ -14,12 +14,14 @@ function crc32(s: string): number {
 export interface Notice {
   heading: string; courseId: number; course: string; title: string; url: string;
   fields: [string, string][]; urgent: boolean;
+  id?: string;                 // 元の活動(quiz:123 など)。個人への転送で提出済みかを見るのに使う。表示には使わない
+  until?: number | null;       // この時刻を過ぎたら送る意味がない(締切・公開時刻)。送り直しの打ち切りに使う。表示には使わない
 }
 
 export function embed(n: Notice) {
   const e: any = {
     author: { name: n.heading },
-    title: n.title.slice(0, 256),
+    title: (n.title || "(無題)").slice(0, 256),
     color: n.urgent ? 0xed4245 : PALETTE[crc32(String(n.courseId)) % PALETTE.length],
     fields: [{ name: "授業", value: n.course.slice(0, 1024) || "-", inline: false },
              ...n.fields.map(([k, v]) => ({ name: k, value: v.slice(0, 1024), inline: true }))],
@@ -30,35 +32,62 @@ export function embed(n: Notice) {
 
 function line(n: Notice): string {
   const title = n.url.startsWith("http") ? `[${n.title.slice(0, 60)}](${n.url})` : n.title.slice(0, 60);
-  return `${n.heading} **${n.course.slice(0, 30)}**\n　${title}(${n.fields.map(([, v]) => v).join("・")})`;
+  return `${n.heading} **${n.course.slice(0, 30)}**\n　${title || "(無題)"}(${n.fields.map(([, v]) => v).join("・")})`;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Discord が受け付けなかった。permanent は送り直しても届かないもの(Webhook の削除・内容の誤りなど) */
+export class DiscordError extends Error {
+  permanent: boolean;
+  constructor(message: string, permanent: boolean) { super(message); this.permanent = permanent; }
+}
 
 export async function post(url: string, embeds: any[], content?: string): Promise<void> {
   for (let i = 0; i < Math.max(embeds.length, 1); i += 10) {
     const payload: any = { embeds: embeds.slice(i, i + 10), allowed_mentions: { parse: [] } };
     if (content && i === 0) payload.content = content;
-    for (let tries = 0; tries < 5; tries++) {
+    let done = false;
+    for (let tries = 0; tries < 5 && !done; tries++) {
       const r = await fetch(url, { method: "POST", body: JSON.stringify(payload),
-                                   headers: { "Content-Type": "application/json" } });
+                                   headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(15_000) });
       if (r.status === 429) {
         const j: any = await r.json().catch(() => ({}));
         await sleep((Number(j.retry_after ?? 1) + 0.5) * 1000);
         continue;
       }
-      if (!r.ok) throw new Error(`Discord HTTP ${r.status}`);
-      break;
+      if (!r.ok) throw new DiscordError(`Discord HTTP ${r.status}`, r.status >= 400 && r.status < 500);
+      done = true;
     }
+    if (!done) throw new DiscordError("Discord HTTP 429(混雑のため送れませんでした)", false);
   }
 }
 
-/** 急ぎのものは単独で、それ以外は3件までは個別・4件以上は1つにまとめて送る */
+function digest(notices: Notice[], title: string, color: number) {
+  const lines: string[] = [];
+  let len = 0;
+  for (const [i, n] of notices.entries()) {
+    const l = line(n);
+    if (len + l.length > 3900) { lines.push(`…ほか ${notices.length - i} 件(Moodle で確認してください)`); break; }
+    lines.push(l); len += l.length + 1;
+  }
+  return { title, description: lines.join("\n"), color };
+}
+
+/** 急ぎのものは単独で(4件以上なら1つにまとめて)、それ以外は3件までは個別・4件以上は1つにまとめて送る。
+ *  授業のコピーなどで一度に大量に出ても、メッセージは数件に収まる */
 export async function send(url: string, notices: Notice[]): Promise<void> {
-  for (const n of notices.filter((n) => n.urgent)) await post(url, [embed(n)]);
+  const urgent = notices.filter((n) => n.urgent);
+  if (urgent.length <= 3) for (const n of urgent) await post(url, [embed(n)]);
+  else await post(url, [digest(urgent, `🚨 急ぎ ${urgent.length} 件`, 0xed4245)]);
   const normal = notices.filter((n) => !n.urgent);
   if (!normal.length) return;
   if (normal.length <= 3) await post(url, normal.map(embed));
-  else await post(url, [{ title: `Moodle 更新 ${normal.length} 件`,
-                          description: normal.map(line).join("\n").slice(0, 4000), color: 0x5865f2 }]);
+  else await post(url, [digest(normal, `Moodle 更新 ${normal.length} 件`, 0x5865f2)]);
+}
+
+/** 埋め込みを使わない最低限の形(Discord が内容を受け付けなかったときの予備) */
+export async function sendPlain(url: string, n: Notice): Promise<void> {
+  const text = `${n.heading}\n${n.course} / ${n.title || "(無題)"}\n${n.fields.map(([k, v]) => `${k}: ${v}`).join(" ")}\n${n.url}`;
+  await post(url, [], text.slice(0, 1900));
 }

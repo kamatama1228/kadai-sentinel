@@ -1,6 +1,6 @@
 // 何をいつ通知するかを決める(PC 版 notifier/run.py と同じ判定)
 import { isOpen, windowText, type Activity, type Task } from "./moodle.ts";
-import { courseRule, inWindow, personalFor, sharedIds, wants, type CourseRule, type Rules } from "./rules.ts";
+import { courseRule, inWindow, personalFor, personalSkips, sharedIds, wants, type CourseRule, type Rules } from "./rules.ts";
 import { dateKey, fmtTime, fromLocal, hm, human, local, parseDuration, remaining } from "./time.ts";
 import type { Notice } from "./discord.ts";
 
@@ -11,8 +11,15 @@ export interface State {
   personal: Record<string, { due: number | null; sent: string[]; last_seen: number }>;
   morning_date?: string;
   next_at?: number;
-  last_error_day?: string;
+  last_error_day?: string;        // (旧)使っていない
+  last_alert_at?: number;         // 最後に「確認できていません」を送った時刻
+  last_ok?: number;               // 最後に Moodle の確認が成功した時刻
+  fail_since?: number;            // Moodle の確認の失敗が続いている場合、その始まり
+  pending?: { shared?: Pending[]; personal?: Pending[] };   // Discord に送れなかった通知(送り直す)
+  retry_at?: number;              // 次に送り直す時刻
 }
+
+export interface Pending { at: number; notice: Notice }
 
 const union = (a: string[], b: Iterable<string>) => [...new Set([...a, ...b])].sort();
 
@@ -57,7 +64,7 @@ export function planShared(acts: Activity[], state: State, rules: Rules, now: nu
     if (!rec) rec = { open: a.open, due: a.due, sent: [], last_seen: now };
     let sent = rec.sent;
     const notice = (heading: string, fields: [string, string][], urgent = false): Notice =>
-      ({ heading, courseId: a.courseId, course: a.course, title: a.title, url: a.url, fields, urgent });
+      ({ heading, courseId: a.courseId, course: a.course, title: a.title, url: a.url, fields, urgent, id: a.id, until: a.due });
 
     if (!isNew) {
       if (rec.due !== a.due && a.due) {
@@ -73,6 +80,10 @@ export function planShared(acts: Activity[], state: State, rules: Rules, now: nu
     if (first) {
       sent = union(sent, ["new", "scheduled", ...(isOpen(a, now) || closed ? ["open"] : [])]);
     } else if (closed) {
+      // 締切が過去の日付のまま新しく出された(教授の日付の設定ミスなど)。黙って捨てずに一度だけ知らせる
+      if (isNew && ev.has("new")) {
+        out.push({ ...notice(`🆕 新しい${a.kind}(締切が過去の日付になっています)`, [["締切", fmtTime(a.due)]]), until: null });
+      }
       sent = union(sent, ["new", "scheduled", "open"]);
     } else {
       if (ev.has("open") && !sent.includes("open") && isOpen(a, now)) {
@@ -113,7 +124,7 @@ export function planMorning(acts: Activity[], state: State, rules: Rules, now: n
     if (!ts || ts <= now) continue;
     if (dateKey(ts) === today) {
       out.push({ heading: `☀️ 今日の${a.kind}`, courseId: a.courseId, course: a.course, title: a.title,
-                 url: a.url, fields: [["受付", windowText(a)]], urgent: false });
+                 url: a.url, fields: [["受付", windowText(a)]], urgent: false, id: a.id, until: ts });
     }
   }
   return out;
@@ -123,7 +134,7 @@ export function planPersonal(tasks: Task[], state: State, rules: Rules, now: num
   const seen = (state.personal ??= {});
   const out: Notice[] = [];
   for (const t of tasks) {
-    if (rules.personalExclude.has(t.courseId)) continue;
+    if (personalSkips(rules, t)) continue;
     const rec = seen[t.id] ?? { due: t.due, sent: [], last_seen: now };
     let sent = rec.due === t.due ? rec.sent : [];
     const r = reminderDue(t.due, now, personalFor(rules, t.courseId), sent);
@@ -132,7 +143,7 @@ export function planPersonal(tasks: Task[], state: State, rules: Rules, now: num
       if (!first || left <= 3 * 3600) {
         out.push({ heading: r[0].replace("⏰ ", "⏰ 未提出:"), courseId: t.courseId, course: t.course,
                    title: t.title, url: t.url, fields: [["締切", fmtTime(t.due)], ["種類", t.type]],
-                   urgent: left <= 3 * 3600 });
+                   urgent: left <= 3 * 3600, id: t.id, until: t.due });
       }
       sent = union(sent, r[1]);
     }
@@ -140,6 +151,23 @@ export function planPersonal(tasks: Task[], state: State, rules: Rules, now: num
   }
   forget(seen, now);
   return out;
+}
+
+/** 転送する締切リマインドのうち、提出済みかを Moodle に確かめる必要があるもの(やること一覧に無いもの) */
+export function needsSubmitCheck(shared: Notice[], tasks: Task[], rules: Rules): string[] {
+  if (!rules.personalMirror || !rules.mirrorSkipSubmitted) return [];
+  const todo = new Set(tasks.map((t) => t.id));
+  return [...new Set(shared.filter((n) => n.heading.startsWith("⏰") && n.id && !n.id.startsWith("manual:") && !todo.has(n.id))
+                           .map((n) => n.id as string))];
+}
+
+/**
+ * 共有チャンネルに送る通知を、個人チャンネル用に写す。
+ * 締切リマインド(⏰)は、Moodle で「提出済み」と確かめられたものだけ除く(分からないときは送る)。
+ */
+export function mirrorShared(shared: Notice[], submitted: Set<string>, rules: Rules): Notice[] {
+  if (!rules.personalMirror) return [];
+  return shared.filter((n) => !(rules.mirrorSkipSubmitted && n.heading.startsWith("⏰") && n.id && submitted.has(n.id)));
 }
 
 /** notify.toml の [[event]]。Moodle に名前の合うものが出ていれば使わない */
@@ -177,7 +205,7 @@ export function nextRunAt(rules: Rules, acts: Activity[], tasks: Task[], now: nu
     if (a.due) for (const [, ts] of reminderPoints(a.due, rule.remind)) c.push(ts + 30);
   }
   for (const t of tasks) {
-    if (t.due && !rules.personalExclude.has(t.courseId)) {
+    if (t.due && !personalSkips(rules, t)) {
       for (const [, ts] of reminderPoints(t.due, personalFor(rules, t.courseId))) c.push(ts + 30);
     }
   }

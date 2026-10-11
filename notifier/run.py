@@ -3,6 +3,7 @@
 共有チャンネル(DISCORD_WEBHOOK_URL)  : notify.toml で有効にした授業の課題・小テスト
                                          (自分の提出状況とは関係なく、授業の情報として流す)
 個人チャンネル(PERSONAL_WEBHOOK_URL) : 自分の未提出課題のリマインド
+                                         (mirror_shared なら共有チャンネルの通知の写しも)
 状態は state/notify.json に保存する(公開リポジトリには入れない)。
 """
 
@@ -107,7 +108,7 @@ def plan_shared(acts: list[Activity], state: dict[str, Any], rules: Rules, now: 
         sent: list[str] = rec["sent"]
 
         def notice(heading: str, fields: list[tuple[str, str]], urgent: bool = False) -> Notice:
-            return Notice(heading, a.course_id, a.course, a.title, a.url, fields, urgent)
+            return Notice(heading, a.course_id, a.course, a.title, a.url, fields, urgent, id=a.id)
 
         if not is_new:
             if rec.get("due") != a.due and a.due:
@@ -123,6 +124,9 @@ def plan_shared(acts: list[Activity], state: dict[str, Any], rules: Rules, now: 
             # 初回は今の状態を記録するだけ。これから公開されるものは、公開時に通知される
             sent = sorted(set(sent) | {"new", "scheduled"} | ({"open"} if a.is_open(now) or closed else set()))
         elif closed:
+            # 締切が過去の日付のまま新しく出された(教授の日付の設定ミスなど)。黙って捨てずに一度だけ知らせる
+            if is_new and "new" in ev:
+                out.append(notice(f"🆕 新しい{a.kind}(締切が過去の日付になっています)", [("締切", fmt_time(a.due))]))
             sent = sorted(set(sent) | {"new", "scheduled", "open"})
         else:
             if "open" in ev and "open" not in sent and a.is_open(now):
@@ -179,7 +183,7 @@ def plan_personal(tasks: list[Task], state: dict[str, Any], rules: Rules, now: i
     seen: dict[str, Any] = state.setdefault("personal", {})
     out = []
     for t in tasks:
-        if t.course_id in rules.personal_exclude:
+        if rules.personal_skips(t.course_id, t.type, t.title):
             continue
         rec = seen.get(t.id) or {"due": t.due, "sent": []}
         sent = rec["sent"] if rec.get("due") == t.due else []
@@ -194,6 +198,14 @@ def plan_personal(tasks: list[Task], state: dict[str, Any], rules: Rules, now: i
     for k in [k for k, v in seen.items() if now - v.get("last_seen", now) > FORGET_AFTER]:
         del seen[k]
     return out
+
+
+def mirror_shared(shared: list[Notice], tasks: list[Task], rules: Rules) -> list[Notice]:
+    """共有チャンネルの通知を個人チャンネル用に写す。
+    (予備の PC 版は提出済みの確認をしないので、締切リマインドも含めて全部送る。届かないよりは良い)"""
+    if not rules.personal_mirror:
+        return []
+    return list(shared)
 
 
 # ---------------------------------------------------------------- 実行
@@ -239,7 +251,7 @@ def run_once(env: dict[str, str], rules: Rules | None = None, dry_run: bool = Fa
 
     shared = plan_shared(acts, state, rules, now, first)
     shared += plan_morning(acts, state, rules, local) if not first else []
-    personal = plan_personal(tasks, state, rules, now, first)
+    personal = mirror_shared(shared, tasks, rules) + plan_personal(tasks, state, rules, now, first)
     if first:
         log(f"初回のため現在の状態を記録しました(共有 {len(acts)} 件 / 個人 {len(tasks)} 件)。")
 
@@ -248,7 +260,12 @@ def run_once(env: dict[str, str], rules: Rules | None = None, dry_run: bool = Fa
         for n in items:
             log(f"[{label}] {n.heading} | {n.course} / {n.title} | " + " ".join(v for _, v in n.fields))
         if items and not dry_run:
-            if env.get(key):
+            if env.get(key) and label == "個人":
+                try:                              # 個人の失敗で共有の通知が二重に送られないようにする
+                    send(env[key], items)
+                except Exception as e:
+                    log(f"  → 個人チャンネルへの送信に失敗しました: {e}")
+            elif env.get(key):
                 send(env[key], items)
             else:
                 log(f"  → {key} が未設定のため送信しません")
@@ -303,7 +320,7 @@ def next_run_at(rules: Rules, acts: list[Activity], tasks: list[Task], now: int)
             candidates += [ts + 30 for _, ts, _ in reminder_points(a.due, rule.remind)]
     # 個人チャンネル:リマインドの時刻
     for t in tasks:
-        if t.due and t.course_id not in rules.personal_exclude:
+        if t.due and not rules.personal_skips(t.course_id, t.type, t.title):
             candidates += [ts + 30 for _, ts, _ in reminder_points(t.due, rules.personal_for(t.course_id))]
     future = [c for c in candidates if c > now + 20]
     return min(future) if future else now + 3600

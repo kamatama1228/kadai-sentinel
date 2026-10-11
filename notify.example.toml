@@ -52,6 +52,11 @@ remind = ["1d", "3h"]
 
 [personal]
 # 自分専用チャンネルへの、未提出課題のリマインド
+# mirror_shared = true にすると、共有チャンネルの通知も同じものをここに送る(個人チャンネルだけ見ればよくなる)。
+#   そのとき共有チャンネルの授業は、二重にならないよう未提出リマインドの対象から自動で外れる
+#   mirror_skip_submitted = true(既定)なら、転送する締切リマインドのうち提出済みのものは送らない
+mirror_shared = false
+mirror_skip_submitted = true
 remind = ["1d", "3h"]
 exclude = []               # 個人通知もいらない授業のID
 

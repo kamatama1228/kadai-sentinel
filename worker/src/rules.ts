@@ -28,6 +28,10 @@ export const inWindow = (w: Window, l: Local) => {
 export interface Rules {
   default: CourseRule; courses: Map<number, CourseRule>;
   personalRemind: string[]; personalExclude: Set<number>; personalCourses: Map<number, string[]>;
+  /** 共有チャンネルの通知を個人チャンネルにも送る(個人チャンネルだけ見ていれば済むように) */
+  personalMirror: boolean;
+  /** 転送する締切リマインドのうち、自分が提出済みのものは送らない */
+  mirrorSkipSubmitted: boolean;
   manual: ManualEvent[]; schedule: [number, number][]; fast: number; morningAt: [number, number];
   windows: Window[];
 }
@@ -35,6 +39,18 @@ export interface Rules {
 export const courseRule = (r: Rules, id: number) => r.courses.get(id) ?? r.default;
 export const personalFor = (r: Rules, id: number) => r.personalCourses.get(id) ?? r.personalRemind;
 export const sharedIds = (r: Rules) => [...r.courses].filter(([, c]) => c.enabled).map(([id]) => id);
+/**
+ * 個人の「未提出」リマインドを送らないもの。
+ *  - exclude した授業
+ *  - 転送オンのとき、共有チャンネルが扱うもの(二重にしない)。match で絞っている授業は、絞った残りも共有の設定に従う
+ *    (共有で扱わない種類、たとえば教授がワークショップで出したレポートなどは、個人で知らせる)
+ */
+export const personalSkips = (r: Rules, t: { courseId: number; type: string; title: string }) => {
+  if (r.personalExclude.has(t.courseId)) return true;
+  const c = r.courses.get(t.courseId);
+  if (!r.personalMirror || !c?.enabled) return false;
+  return c.match.length > 0 || wants(c, t.type, t.title);
+};
 
 function checkRemind(specs: unknown[]): string[] {
   return specs.map((x) => {
@@ -86,6 +102,8 @@ export function parseRules(data: any): Rules {
     personalExclude: new Set((personal.exclude ?? []).map(Number)),
     personalCourses: new Map(Object.entries(personal.course ?? {})
       .map(([k, v]: [string, any]) => [Number(k), checkRemind(v.remind ?? [])])),
+    personalMirror: Boolean(personal.mirror_shared ?? false),
+    mirrorSkipSubmitted: Boolean(personal.mirror_skip_submitted ?? true),
     manual: (data.event ?? []).map((e: any) => ({
       title: e.title, courseId: Number(e.course_id ?? 0), course: e.course ?? "",
       open: ts(e.open), due: ts(e.due) ?? 0, remind: checkRemind(e.remind ?? ["1d", "3h"]), match: e.match ?? [],
