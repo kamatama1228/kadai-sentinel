@@ -84,7 +84,7 @@ uv run moodle tasks             # やること一覧が出れば OK
 | 使っている AI | つなぎ方 |
 | --- | --- |
 | Claude Code / Codex CLI | このフォルダで起動するだけ。`AGENTS.md` を読んでコマンドを使う |
-| Gemini(Antigravity のアプリ・`agy`) | このフォルダを開くだけ。`GEMINI.md` と `AGENTS.md` を読む。PC に慣れていない人向けの手順は [docs/GUIDE_ANTIGRAVITY.md](docs/GUIDE_ANTIGRAVITY.md)(Gemini CLI は 2026年6月に終了) |
+| Gemini(Antigravity のアプリ・`agy`) | このフォルダを開くだけ。`GEMINI.md` と `AGENTS.md` を読む(Gemini CLI は 2026年6月に終了) |
 | Claude デスクトップアプリ | このフォルダをチャットに接続すると、スマホからでも頼める |
 | その他 | `uv run moodle tasks --json` の結果や資料を貼り付ける |
 
