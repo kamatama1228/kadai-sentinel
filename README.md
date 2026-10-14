@@ -16,7 +16,7 @@
 - **共有と個人を分ける**:友達との共有チャンネルには授業の情報だけ、自分の提出状況は自分専用チャンネルだけに
 - **大学のサーバーに優しい**:Moodle を確認するのはふだん 1 日 2 回。短い小テストがある時間帯だけ 1 分おき
 - **24 時間・無料**:Cloudflare Workers の無料枠で動く。PC を閉じていても届く
-- **AI から使える**:Claude Code・Codex CLI・Gemini CLI などが `AGENTS.md` を読んで、そのまま使える
+- **AI から使える**:Claude Code・Codex CLI・Antigravity(旧 Gemini CLI)などが `AGENTS.md` を読んで、そのまま使える
 - **読み取り専用**:Moodle には何も書き込みません
 
 ## 仕組み
@@ -28,7 +28,7 @@ flowchart LR
     C --> N[通知の判定<br/>notify.toml のルール]
     N -->|共有チャンネル| D1[Discord<br/>友達と]
     N -->|個人チャンネル| D2[Discord<br/>自分だけ]
-    CLI --> AI[手元の AI<br/>Claude / Codex / Gemini]
+    CLI --> AI[手元の AI<br/>Claude / Codex / Antigravity]
     W[Cloudflare Workers<br/>または PC 常駐] -. 決めた時刻に起動 .-> N
 ```
 
@@ -83,7 +83,8 @@ uv run moodle tasks             # やること一覧が出れば OK
 
 | 使っている AI | つなぎ方 |
 | --- | --- |
-| Claude Code / Codex CLI / Gemini CLI | このフォルダで起動するだけ。`AGENTS.md` を読んでコマンドを使う |
+| Claude Code / Codex CLI | このフォルダで起動するだけ。`AGENTS.md` を読んでコマンドを使う |
+| Gemini(Antigravity のアプリ・`agy`) | このフォルダを開くだけ。`GEMINI.md` と `AGENTS.md` を読む。PC に慣れていない人向けの手順は [docs/GUIDE_ANTIGRAVITY.md](docs/GUIDE_ANTIGRAVITY.md)(Gemini CLI は 2026年6月に終了) |
 | Claude デスクトップアプリ | このフォルダをチャットに接続すると、スマホからでも頼める |
 | その他 | `uv run moodle tasks --json` の結果や資料を貼り付ける |
 

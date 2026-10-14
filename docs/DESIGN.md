@@ -92,7 +92,7 @@ AGENTS.md   AI エージェント向けの使い方とルール(CLAUDE.md・GEMI
 
 ## AI との連携
 
-- コマンドを実行できる AI(Claude Code・Codex CLI・Gemini CLI など)は `AGENTS.md` を読んで CLI を使う
+- コマンドを実行できる AI(Claude Code・Codex CLI・Antigravity(旧 Gemini CLI)など)は `AGENTS.md` を読んで CLI を使う
 - `AGENTS.md` には、トークンを表示しない、ログインは本人が行う、Discord 投稿は確認してから、資料を外部に出さない、などのルールを書く
 - 将来、チャットアプリからも使えるように MCP サーバーを用意することを検討する
 
