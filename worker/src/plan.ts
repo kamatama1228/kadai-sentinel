@@ -28,6 +28,7 @@ export interface Pending { at: number; notice: Notice }
 export interface OnlineItem {
   courseId: number; course: string; title: string; url: string; channel: "shared" | "personal";
   day: string | null;   // オンライン授業の日(YYYY-MM-DD)。分からなければ null
+  at?: number;          // 授業の開始時刻(出欠の予定から分かるとき)
   seen: number; sent: boolean;
 }
 
@@ -238,16 +239,16 @@ const morningReached = (rules: Rules, now: number) => {
   return l.h * 60 + l.mi >= rules.morningAt[0] * 60 + rules.morningAt[1];
 };
 
-/** リンクが置かれた授業の「次の授業の日」。出欠の予定 → 曜日の設定 の順に探す。分からなければ null */
-function classDay(rules: Rules, u: UrlItem, attendance: number[] | undefined, now: number): string | null {
+/** リンクが置かれた授業の「次の授業」の日と開始時刻。出欠の予定 → 曜日の設定 の順に探す。分からなければ null */
+function classDay(rules: Rules, u: UrlItem, attendance: number[] | undefined, now: number): { day: string; at?: number } | null {
   const base = u.tm || now;
   const t = (attendance ?? []).find((x) => x >= base - 3600 && x <= base + 8 * DAY);
-  if (t) return dateKey(t);
+  if (t) return { day: dateKey(t), at: t };
   const days = rules.courseDays.get(u.courseId);
   if (days) {
     for (let i = 0; i < 8; i++) {
       const ts = base + i * DAY;
-      if (days.has(local(ts).dow)) return dateKey(ts);
+      if (days.has(local(ts).dow)) return { day: dateKey(ts) };
     }
   }
   return null;
@@ -268,14 +269,11 @@ export function refreshOnline(rules: Rules, urls: UrlItem[], attendance: Map<num
     const key = `url:${u.cmid}`;
     const rule = rules.courses.get(u.courseId);
     const channel = rules.online.shared && rule?.enabled && !rule.match.length ? "shared" : "personal";
-    const day = classDay(rules, u, attendance.get(u.courseId), now);
-    const old = seen[key];
-    if (old) {
-      if (old.day === null && day && !old.sent) old.day = day;   // あとから出欠の予定が出た
-      continue;
-    }
+    const found = classDay(rules, u, attendance.get(u.courseId), now);
+    const day = found?.day ?? null;
+    if (seen[key]) continue;
     const item: OnlineItem = { courseId: u.courseId, course: names.get(u.courseId) ?? "", title: u.name,
-                               url: `${base}/mod/url/view.php?id=${u.cmid}`, channel, day, seen: now,
+                               url: `${base}/mod/url/view.php?id=${u.cmid}`, channel, day, at: found?.at, seen: now,
                                sent: day !== null && day < dateKey(now) };
     // 日付が分からない新しいリンクは、見つけたときに知らせる(最初に記録するときと、古いリンクは除く)
     if (day === null) {
@@ -298,12 +296,13 @@ export function refreshOnline(rules: Rules, urls: UrlItem[], attendance: Map<num
 export function planOnlineToday(rules: Rules, state: State, now: number): Notice[] {
   if (!rules.online.enabled || !state.online || !morningReached(rules, now)) return [];
   const today = dateKey(now);
-  const late = local(now).h >= 18;          // 夜に見つかったものは、もう授業が終わっているので送らない
   const out: Notice[] = [];
   for (const [key, v] of Object.entries(state.online)) {
     if (v.sent || v.day !== today) continue;
     v.sent = true;
-    if (late) continue;
+    // もう授業が終わっているものは送らない(締切などのほかの通知には関係ない)
+    //   開始時刻が分かる授業:開始から 90 分を過ぎたら。分からない授業:22 時を過ぎたら
+    if (v.at ? now > v.at + 90 * 60 : local(now).h >= 22) continue;
     out.push({ heading: "🖥 今日はオンライン授業です", courseId: v.courseId, course: v.course, title: v.title, url: v.url,
                fields: [["日付", today.slice(5).replace("-", "/")]], urgent: false, id: key,
                until: now + 18 * 3600, channel: v.channel });
