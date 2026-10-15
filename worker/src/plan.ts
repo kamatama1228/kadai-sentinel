@@ -298,10 +298,12 @@ export function refreshOnline(rules: Rules, urls: UrlItem[], attendance: Map<num
 export function planOnlineToday(rules: Rules, state: State, now: number): Notice[] {
   if (!rules.online.enabled || !state.online || !morningReached(rules, now)) return [];
   const today = dateKey(now);
+  const late = local(now).h >= 18;          // 夜に見つかったものは、もう授業が終わっているので送らない
   const out: Notice[] = [];
   for (const [key, v] of Object.entries(state.online)) {
     if (v.sent || v.day !== today) continue;
     v.sent = true;
+    if (late) continue;
     out.push({ heading: "🖥 今日はオンライン授業です", courseId: v.courseId, course: v.course, title: v.title, url: v.url,
                fields: [["日付", today.slice(5).replace("-", "/")]], urgent: false, id: key,
                until: now + 18 * 3600, channel: v.channel });
