@@ -34,6 +34,33 @@ export interface Rules {
   mirrorSkipSubmitted: boolean;
   manual: ManualEvent[]; schedule: [number, number][]; fast: number; morningAt: [number, number];
   windows: Window[];
+  /** オンライン授業の朝の通知 */
+  online: { enabled: boolean; shared: boolean; keywords: string[]; exclude: string[] };
+  /** 授業の曜日(出欠の予定がない授業で、オンライン授業の日を決めるのに使う)。月曜=0 */
+  courseDays: Map<number, Set<number>>;
+  /** 共有チャンネルにない授業の、締切の変更を個人に知らせる */
+  personalChanges: boolean;
+  /** 共有チャンネルにない授業の「お知らせ」を個人に知らせる */
+  news: { mode: "keywords" | "all" | "off"; keywords: string[] };
+  /** 通知を消すルール(コードを触らずに調整するためのもの) */
+  mute: MuteRule[];
+}
+
+export interface MuteRule { channel: "shared" | "personal" | "both"; course?: number; title?: string; heading?: string }
+
+export const DEFAULT_ONLINE_KEYWORDS = ["Zoom", "zoom", "ZOOM", "Teams", "Webex", "遠隔", "オンライン", "Meet", "ライブ配信"];
+export const DEFAULT_ONLINE_EXCLUDE = ["VoD", "VOD", "オンデマンド", "録画", "＋R", "+R", "プラスR"];
+export const DEFAULT_NEWS_KEYWORDS = ["休講", "補講", "変更", "オンライン", "遠隔", "Zoom", "延期", "中止", "教室", "休止", "注意"];
+
+export function isOnlineName(r: Rules, name: string): boolean {
+  return r.online.keywords.some((k) => name.includes(k)) && !r.online.exclude.some((k) => name.includes(k));
+}
+
+export function muted(r: Rules, ch: "shared" | "personal", n: { courseId: number; title: string; heading: string }): boolean {
+  return r.mute.some((m) => (m.channel === "both" || m.channel === ch)
+    && (m.course === undefined || m.course === n.courseId)
+    && (m.title === undefined || n.title.includes(m.title))
+    && (m.heading === undefined || n.heading.includes(m.heading)));
 }
 
 export const courseRule = (r: Rules, id: number) => r.courses.get(id) ?? r.default;
@@ -79,6 +106,33 @@ function ts(text: unknown): number | null {
   return fromLocal(+m[1], +m[2], +m[3], +m[4], +m[5]);
 }
 
+function parseDays(v: unknown, where: string): Set<number> | null {
+  if (v === undefined) return null;
+  if (!Array.isArray(v)) throw new Error(`${where} の days は ["thu"] のように書いてください`);
+  return new Set(v.map((d) => {
+    const i = DAYS.indexOf(String(d).toLowerCase().slice(0, 3));
+    if (i < 0) throw new Error(`${where} の days に分からない曜日があります: ${d}(mon tue wed thu fri sat sun)`);
+    return i;
+  }));
+}
+
+function parseMute(list: unknown): MuteRule[] {
+  if (list === undefined) return [];
+  if (!Array.isArray(list)) throw new Error("[[mute]] の書き方が正しくありません");
+  return list.map((m: any, i: number) => {
+    const ch = m.channel ?? "both";
+    if (!["shared", "personal", "both"].includes(ch)) throw new Error(`[[mute]] ${i + 1}個目の channel は shared / personal / both のどれかにしてください`);
+    const r: MuteRule = { channel: ch };
+    if (m.course !== undefined) r.course = Number(m.course);
+    if (m.title !== undefined) r.title = String(m.title);
+    if (m.heading !== undefined) r.heading = String(m.heading);
+    if (r.course === undefined && !r.title && !r.heading) {
+      throw new Error(`[[mute]] ${i + 1}個目に条件(course / title / heading)がありません(全部の通知が消えてしまうため)`);
+    }
+    return r;
+  });
+}
+
 export function parseRules(data: any): Rules {
   const def = rule(data.default ?? {});
   const courses = new Map<number, CourseRule>(
@@ -111,6 +165,23 @@ export function parseRules(data: any): Rules {
     schedule: (watch.schedule ?? ["10:00", "22:00"]).map(hm).sort((a: number[], b: number[]) => a[0] * 60 + a[1] - b[0] * 60 - b[1]),
     fast,
     morningAt: hm(watch.morning_at ?? "08:00"),
+    online: {
+      enabled: Boolean(data.online?.enabled ?? true),
+      shared: Boolean(data.online?.shared ?? true),
+      keywords: (data.online?.keywords ?? DEFAULT_ONLINE_KEYWORDS).map(String),
+      exclude: (data.online?.exclude ?? DEFAULT_ONLINE_EXCLUDE).map(String),
+    },
+    courseDays: new Map([
+      ...Object.entries(personal.course ?? {}).map(([k, v]: [string, any]) => [Number(k), parseDays(v.days, `[personal.course.${k}]`)] as const),
+      ...Object.entries(data.course ?? {}).map(([k, v]: [string, any]) => [Number(k), parseDays(v.days, `[course.${k}]`)] as const),
+    ].filter(([, d]) => d !== null) as [number, Set<number>][]),
+    personalChanges: Boolean(personal.changes ?? true),
+    news: (() => {
+      const mode = String(personal.news ?? "keywords");
+      if (!["keywords", "all", "off"].includes(mode)) throw new Error("[personal] news は keywords / all / off のどれかにしてください");
+      return { mode: mode as "keywords" | "all" | "off", keywords: (personal.news_keywords ?? DEFAULT_NEWS_KEYWORDS).map(String) };
+    })(),
+    mute: parseMute(data.mute),
     windows: (watch.fast_windows ?? []).map((w: any) => ({
       days: new Set((w.days ?? DAYS).map((d: string) => DAYS.indexOf(d.toLowerCase().slice(0, 3)))),
       start: hm(w.start ?? "00:00"), end: hm(w.end ?? "23:59"),

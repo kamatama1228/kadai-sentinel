@@ -94,6 +94,7 @@ uv run moodle tasks             # やること一覧が出れば OK
 
 1. Discord のチャンネル設定 → 連携サービス → ウェブフック で URL を作り、`.env` に書く(共有用 `DISCORD_WEBHOOK_URL`、自分用 `PERSONAL_WEBHOOK_URL`)
 2. `cp notify.example.toml notify.toml` して、授業ごとのルールを書く(書き方はファイル内のコメント)
+   - 自分用の細かい調整(通知を消す・オンライン授業・お知らせなど)は [docs/CUSTOMIZE.md](docs/CUSTOMIZE.md)
 
 ### Cloudflare Workers で 24 時間動かす(無料)
 

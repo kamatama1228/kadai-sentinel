@@ -4,9 +4,10 @@
 import { parse } from "smol-toml";
 import configText from "../../notify.toml";
 import { DiscordError, send, sendPlain, type Notice } from "./discord.ts";
-import { fetchActivities, fetchGeneric, fetchTodo, isSubmitted, listCourses, Moodle, MoodleError, type Activity, type Task } from "./moodle.ts";
-import { manualActivities, mirrorShared, needsSubmitCheck, nextRunAt, planMorning, planPersonal, planShared, type Pending, type State } from "./plan.ts";
-import { courseRule, parseRules, sharedIds } from "./rules.ts";
+import { fetchActivities, fetchAttendance, fetchGeneric, fetchNews, fetchTodo, fetchUrls, isSubmitted, listCourses, Moodle, MoodleError,
+         type Activity, type Task } from "./moodle.ts";
+import { manualActivities, mirrorShared, needsSubmitCheck, nextRunAt, planNews, planOnlineToday, refreshOnline, planMorning, planPersonal, planShared, type Pending, type State } from "./plan.ts";
+import { courseRule, muted, parseRules, sharedIds, type Rules } from "./rules.ts";
 import { fmtTime } from "./time.ts";
 
 interface Env {
@@ -17,7 +18,12 @@ interface Env {
   STATE: KVNamespace;
 }
 
-const rules = parseRules(parse(configText));
+// notify.toml の読み込み。誤りがあっても黙って止まらないよう、誤りの内容を覚えておいて自分に知らせる
+let rules: Rules;
+let configError: string | null = null;
+try { rules = parseRules(parse(configText)); }
+catch (e) { configError = String(e instanceof Error ? e.message : e); rules = undefined as unknown as Rules; }
+const EXTRAS_EVERY = 3 * 3600 - 300;   // オンライン授業・お知らせの取得は約3時間に1回(1分おきの時間帯でも増やさない)
 const PENDING_TTL = 12 * 3600;         // Discord に送れなかった通知は、12時間まで(締切・公開時刻を過ぎたらそこまで)送り直す
 const PENDING_RETRY = 5 * 60;          // 送り直しは5分おき(急ぎの通知があれば1分おき)。Moodle には問い合わせない
 const PENDING_KEEP = 100;              // 送り直し待ちとして残す上限(今回送る分は全部送る)
@@ -69,6 +75,9 @@ async function flush(env: Env, state: State, now: number, fresh: Record<Channel,
   const pending = (state.pending ??= {});
   const items: Record<Channel, Pending[]> = { shared: [], personal: [] };
   for (const ch of ["shared", "personal"] as Channel[]) {
+    const keep = fresh[ch].filter((n) => !muted(rules, ch, n));      // [[mute]] で消したもの
+    if (keep.length < fresh[ch].length) console.log(`[${ch}] ミュートで ${fresh[ch].length - keep.length} 件を送りませんでした`);
+    fresh[ch] = keep;
     items[ch] = urls[ch] ? (pending[ch] ?? []).filter((p) => alive(p, now))
       .concat(fresh[ch].map((notice) => ({ at: now, notice }))) : [];
     pending[ch] = items[ch];
@@ -91,8 +100,22 @@ async function flush(env: Env, state: State, now: number, fresh: Record<Channel,
   return left.length;
 }
 
+async function configAlert(env: Env, now: number): Promise<never> {
+  const st = (await env.STATE.get<State>("state", "json")) ?? { shared: {}, personal: {} };
+  if (env.PERSONAL_WEBHOOK_URL && now - (st.last_config_alert ?? 0) >= 86400) {
+    st.last_config_alert = now;
+    await env.STATE.put("state", JSON.stringify(st));          // 先に記録してから送る(繰り返さない)
+    await send(env.PERSONAL_WEBHOOK_URL, [{
+      heading: "⚠️ notify.toml に誤りがあり、通知が止まっています", courseId: 0, course: "kadai-sentinel",
+      title: (configError ?? "").slice(0, 200), url: "",
+      fields: [["対処", "notify.toml を直して、もう一度 npx wrangler deploy"]], urgent: true }]).catch(() => {});
+  }
+  throw new Error(`notify.toml の誤り: ${configError}`);
+}
+
 async function run(env: Env, force = false): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
+  if (configError) return configAlert(env, now);
   const saved = await env.STATE.get<State>("state", "json");
   if (saved && !force && now < (saved.next_at ?? 0)) {
     // Moodle を確認する時刻ではないが、送り直しの時刻なら Discord にだけ送り直す
@@ -143,12 +166,36 @@ async function run(env: Env, force = false): Promise<string> {
     throw e;
   }
 
+  // ---- オンライン授業・お知らせ(約3時間に1回だけ取る。失敗しても、ほかの通知は止めない)
+  const extra: Notice[] = [];
+  if (!first && now - (state.extras_at ?? 0) >= EXTRAS_EVERY) {
+    try {
+      const names = await listCourses(m);
+      const ids = [...names.keys()].filter((id) => !rules.personalExclude.has(id));
+      if (rules.online.enabled) {
+        const [urls, att] = [await fetchUrls(m, ids), await fetchAttendance(m, ids, now)];
+        extra.push(...refreshOnline(rules, urls, att, names, state, now, m.base));
+      }
+      if (rules.news.mode !== "off") {
+        const others = ids.filter((id) => !rules.courses.get(id)?.enabled);   // 共有チャンネルにない授業
+        extra.push(...planNews(rules, await fetchNews(m, others), names, state, now, m.base));
+      }
+      state.extras_at = now;
+    } catch (e) {
+      console.log(`オンライン授業・お知らせの取得に失敗(約1時間後にもう一度): ${e}`);
+      state.extras_at = now - EXTRAS_EVERY + 3600;
+    }
+  }
+  extra.push(...planOnlineToday(rules, state, now));
+
   // ---- 通知を決めて送る(Discord の失敗は Moodle の失敗と分けて扱い、送れなかった分は送り直す)
-  const shared = planShared(acts, state, rules, now, first).concat(first ? [] : planMorning(acts, state, rules, now));
+  const shared = planShared(acts, state, rules, now, first).concat(first ? [] : planMorning(acts, state, rules, now))
+    .concat(extra.filter((n) => n.channel === "shared"));
   // 転送する締切リマインドのうち、やること一覧に無いものは、本当に提出済みかを Moodle に確かめる(分からなければ送る)
   const submitted = new Set<string>();
   for (const id of needsSubmitCheck(shared, tasks, rules)) if (await isSubmitted(m, id)) submitted.add(id);
-  const personal = mirrorShared(shared, submitted, rules).concat(planPersonal(tasks, state, rules, now, first));
+  const personal = mirrorShared(shared, submitted, rules).concat(planPersonal(tasks, state, rules, now, first))
+    .concat(extra.filter((n) => n.channel !== "shared"));
   state.last_ok = now;
   delete state.fail_since;
   state.next_at = now + LOCK;                        // 送っている途中に次の確認が始まらないように

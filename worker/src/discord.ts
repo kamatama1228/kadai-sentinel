@@ -16,6 +16,7 @@ export interface Notice {
   fields: [string, string][]; urgent: boolean;
   id?: string;                 // 元の活動(quiz:123 など)。個人への転送で提出済みかを見るのに使う。表示には使わない
   until?: number | null;       // この時刻を過ぎたら送る意味がない(締切・公開時刻)。送り直しの打ち切りに使う。表示には使わない
+  channel?: "shared" | "personal";   // オンライン授業など、送り先が授業によって変わるもの
 }
 
 export function embed(n: Notice) {

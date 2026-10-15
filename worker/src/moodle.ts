@@ -194,3 +194,69 @@ export async function fetchGeneric(m: Moodle, ids: number[], names: Map<number, 
   }
   return [...acts.values()];
 }
+
+// ---------------------------------------------------------------- 追加の情報(オンライン授業・お知らせ)。数時間に1回だけ取る
+
+/** 複数の授業をまとめて問い合わせ、失敗したら授業ごとに取り直す(取れない授業だけ飛ばす) */
+async function perCourse<T>(ids: number[], get: (ids: number[]) => Promise<T[]>): Promise<T[]> {
+  if (!ids.length) return [];
+  try {
+    return await get(ids);
+  } catch (e) {
+    if (ids.length === 1 || !(e instanceof MoodleError) || !e.errorcode || e.errorcode.startsWith("http")) throw e;
+    const out: T[] = [];
+    for (const id of ids) {
+      try { out.push(...await get([id])); }
+      catch (e2) { console.log(`授業 ${id} の情報を取れませんでした(この授業だけ飛ばします): ${e2}`); }
+    }
+    return out;
+  }
+}
+
+export interface UrlItem { cmid: number; courseId: number; name: string; tm: number }
+
+/** URL(リンク)の活動。オンライン授業の Zoom などはここに置かれる */
+export async function fetchUrls(m: Moodle, ids: number[]): Promise<UrlItem[]> {
+  return perCourse(ids, async (cids) => {
+    const r = await m.call("mod_url_get_urls_by_courses", { courseids: cids });
+    return (r.urls ?? []).filter((x: any) => x.visible !== false && x.visible !== 0)
+      .map((x: any) => ({ cmid: Number(x.coursemodule), courseId: Number(x.course), name: clean(x.name),
+                          tm: Number(x.timemodified || 0) }));
+  });
+}
+
+/** 出欠の予定(授業の日時)。授業ごとに時刻の一覧 */
+export async function fetchAttendance(m: Moodle, ids: number[], now: number): Promise<Map<number, number[]>> {
+  const evs = await perCourse(ids, async (cids) => {
+    const r = await m.call("core_calendar_get_calendar_events", {
+      events: { courseids: cids },
+      options: { userevents: 0, siteevents: 0, timestart: now - 10 * 86400, timeend: now + 10 * 86400 },
+    });
+    return (r.events ?? []).filter((e: any) => e.modulename === "attendance");
+  });
+  const out = new Map<number, number[]>();
+  for (const e of evs) out.set(Number(e.courseid), [...(out.get(Number(e.courseid)) ?? []), Number(e.timestart)].sort((a, b) => a - b));
+  return out;
+}
+
+export interface NewsItem { id: number; courseId: number; name: string; text: string; created: number }
+
+/** 各授業の「お知らせ」(ニュースフォーラム)の新しい投稿 */
+export async function fetchNews(m: Moodle, ids: number[]): Promise<NewsItem[]> {
+  const forums = await perCourse(ids, async (cids) =>
+    ((await m.call("mod_forum_get_forums_by_courses", { courseids: cids })) ?? []).filter((f: any) => f.type === "news"));
+  const out: NewsItem[] = [];
+  for (const f of forums) {
+    try {
+      const r = await m.call("mod_forum_get_forum_discussions", { forumid: f.id, page: 0, perpage: 5 });
+      for (const d of r.discussions ?? []) {
+        out.push({ id: Number(d.discussion ?? d.id), courseId: Number(f.course), name: clean(d.name || d.subject),
+                   text: clean(String(d.message ?? "").replace(/<[^>]+>/g, " ")),
+                   created: Number(d.created || d.timemodified || 0) });
+      }
+    } catch (e) {
+      console.log(`お知らせ ${f.id} を取れませんでした(飛ばします): ${e}`);
+    }
+  }
+  return out;
+}
