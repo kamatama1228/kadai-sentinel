@@ -4,19 +4,19 @@
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
 ![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020)
 
-**課題の見張り番。** Moodle の課題・小テスト・締切を見張って Discord に知らせ、手元の AI から Moodle の情報を読めるようにするツールです。
+**課題の見張り番。** Moodle の課題・小テストと締切を Discord に知らせ、手元の AI からも Moodle の情報を読めるようにするツールです。
 
 
-授業中に数分だけ公開される出席小テストを見逃さない。レポートの締切を友達と共有する。配布資料を AI に要約させる。そのために作りました。Moodle を使っている大学・学校なら、設定を変えるだけで使えます。
+授業中に数分だけ公開される出席小テストを見逃さないこと、レポートの締切を友達と共有すること、配布資料を AI に要約してもらうこと。この 3 つのために作りました。Moodle を使っている大学・学校なら、設定を変えるだけで使えます。
 
 ## 特徴
 
-- **見逃さない通知**:新しい課題、締切の変更、締切前のリマインド、小テストが「公開された瞬間」の通知
+- **見逃さない通知**:新しい課題、締切の変更、締切前のリマインド、小テストが公開されたらすぐに知らせる通知
 - **授業ごとにルールを決められる**:何を・いつ知らせるかを `notify.toml` に書くだけ(「1 週間前と前日」「締切日の 16:30」なども可)
-- **共有と個人を分ける**:友達との共有チャンネルには授業の情報だけ、自分の提出状況は自分専用チャンネルだけに
-- **大学のサーバーに優しい**:Moodle を確認するのはふだん 1 日 2 回。短い小テストがある時間帯だけ 1 分おき
+- **共有と個人を分ける**:友達との共有チャンネルには授業の情報だけを流し、自分の提出状況は自分専用のチャンネルにだけ届く
+- **大学のサーバーに負担をかけない**:Moodle を確認するのはふだん 1 日 2 回。短い小テストがある時間帯だけ 1 分おき
 - **24 時間・無料**:Cloudflare Workers の無料枠で動く。PC を閉じていても届く
-- **AI から使える**:Claude Code・Codex CLI・Antigravity(旧 Gemini CLI)などが `AGENTS.md` を読んで、そのまま使える
+- **AI から使える**:Claude Code・Codex CLI・Antigravity(Gemini)などが `AGENTS.md` を読んで、そのまま使える
 - **読み取り専用**:Moodle には何も書き込みません
 
 ## 仕組み
@@ -52,7 +52,7 @@ flowchart LR
 uv sync
 cp .env.example .env            # MOODLE_URL を自分の大学のものに
 uv run moodle diagnose          # ログイン方式を調べる
-uv run moodle login --sso       # SSO の大学(ID・パスワード方式なら --sso なし)
+uv run moodle login --sso       # SSO の大学の場合(ID とパスワードで入る大学は --sso を付けない)
 uv run moodle tasks             # やること一覧が出れば OK
 ```
 
@@ -83,8 +83,8 @@ uv run moodle tasks             # やること一覧が出れば OK
 
 | 使っている AI | つなぎ方 |
 | --- | --- |
-| Claude Code / Codex CLI | このフォルダで起動するだけ。`AGENTS.md` を読んでコマンドを使う |
-| Gemini(Antigravity のアプリ・`agy`) | このフォルダを開くだけ。`GEMINI.md` と `AGENTS.md` を読む(Gemini CLI は 2026年6月に終了) |
+| Claude Code / Codex CLI | このフォルダで起動するだけ。AI が `AGENTS.md` を読んでコマンドを使う |
+| Gemini(Antigravity のアプリ・`agy`) | このフォルダを開くだけ。AI が `GEMINI.md` と `AGENTS.md` を読む(Gemini CLI は 2026 年 6 月に終了) |
 | Claude デスクトップアプリ | このフォルダをチャットに接続すると、スマホからでも頼める |
 | その他 | `uv run moodle tasks --json` の結果や資料を貼り付ける |
 
@@ -92,8 +92,8 @@ uv run moodle tasks             # やること一覧が出れば OK
 
 ## Discord 通知
 
-1. Discord のチャンネル設定 → 連携サービス → ウェブフック で URL を作り、`.env` に書く(共有用 `DISCORD_WEBHOOK_URL`、自分用 `PERSONAL_WEBHOOK_URL`)
-2. `cp notify.example.toml notify.toml` して、授業ごとのルールを書く(書き方はファイル内のコメント)
+1. Discord のチャンネル設定 →「連携サービス」→「ウェブフック」で URL を作り、`.env` に書く(共有用 `DISCORD_WEBHOOK_URL`、自分用 `PERSONAL_WEBHOOK_URL`)
+2. `cp notify.example.toml notify.toml` でコピーして、授業ごとのルールを書く(書き方はファイル内のコメント)
    - 自分用の細かい調整(通知を消す・オンライン授業・お知らせなど)は [docs/CUSTOMIZE.md](docs/CUSTOMIZE.md)
 
 ### Cloudflare Workers で 24 時間動かす(無料)
@@ -116,7 +116,7 @@ npm run secrets                           # .env の値を Cloudflare に登録(
 powershell -ExecutionPolicy Bypass -File scripts\install-watch.ps1
 ```
 
-ログオン時に自動で起動します。Cloudflare 版と同時に動かすと通知が重複するので、どちらか一方で。
+ログオン時に自動で起動します。Cloudflare 版と同時に動かすと通知が二重に届くので、どちらか一方だけにしてください。
 
 ## 設計
 
