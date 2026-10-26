@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { cpSync, mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
@@ -13,7 +13,7 @@ if (major < 22 || (major === 22 && minor < 6)) {
   process.exit(1);
 }
 const flags = [...(major > 23 || (major === 23 && minor >= 6) ? [] : ["--experimental-strip-types"]), "--no-warnings",
-               "--import", join(here, "register.mjs")];
+               "--import", pathToFileURL(join(here, "register.mjs")).href];   // Windows では file:// の形で渡す
 
 /** 標準のテスト用設定をコピーして、一部だけ変えたフォルダを作る */
 function fixture(name, change) {

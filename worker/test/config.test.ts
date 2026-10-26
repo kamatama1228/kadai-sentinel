@@ -3,12 +3,13 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parse } from "smol-toml";
 import { loadConfig, validate } from "../scripts/config-lib.mjs";
 import { migrateData, rulesKey } from "../scripts/config-cli.mjs";
 import { parseRules } from "../src/rules.ts";
 
-const ROOT = new URL("../../", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
+const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 let fails = 0;
 const check = (name: string, ok: boolean, extra = "") => { if (!ok) fails++; console.log(`${ok ? "OK " : "NG "} ${name}${extra ? "  … " + extra : ""}`); };
 const tmp = () => mkdtempSync(join(tmpdir(), "ks-"));

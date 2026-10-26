@@ -7,7 +7,7 @@
 // 設定の解釈は Cloudflare 版と同じコード(worker/src/rules.ts)を使う。解釈の実装はこの1か所だけ。
 // TypeScript をそのまま読むため、Node.js 22.6 以上で --experimental-strip-types を付けて動かす。
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync, cpSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { loadConfig } from "./config-lib.mjs";
 
@@ -181,7 +181,8 @@ async function migrate(root, dryRun) {
   return 0;
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+const same = (a, b) => process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
+if (process.argv[1] && same(fileURLToPath(import.meta.url), resolve(process.argv[1]))) {
   const [cmd, ...rest] = process.argv.slice(2);
   const code = cmd === "check" ? await check(ROOT)
     : cmd === "show" ? await show(ROOT, rest.find((a) => !a.startsWith("-")))
