@@ -1,14 +1,15 @@
 // kadai-sentinel の Discord 通知(Cloudflare Workers 版)
 // 1分おきに起動し、「次に確認する時刻」になっていたときだけ Moodle を確認する(それ以外はすぐ終わる)。
-// 確認する時刻は notify.toml のとおり(ふだんは1日2回、必要な時刻と時間帯だけ1分おき)。状態は KV に保存する。
-import { parse } from "smol-toml";
-import configText from "../../notify.toml";
+// 確認する時刻は設定(notify.toml / config/)のとおり(ふだんは1日2回、必要な時刻と時間帯だけ1分おき)。状態は KV に保存する。
+// 設定は `npm run deploy` のときに worker/scripts/build-config.mjs が worker/.generated/config.json にまとめる。
+import config from "../.generated/config.json" with { type: "json" };
 import { DiscordError, send, sendPlain, type Notice } from "./discord.ts";
 import { fetchActivities, fetchAttendance, fetchGeneric, fetchNews, fetchTodo, fetchUrls, isSubmitted, listCourses, Moodle, MoodleError,
          type Activity, type Task } from "./moodle.ts";
 import { manualActivities, mirrorShared, needsSubmitCheck, nextRunAt, planNews, planOnlineToday, refreshOnline, planMorning, planPersonal, planShared, type Pending, type State } from "./plan.ts";
 import { courseRule, muted, parseRules, sharedIds, type Rules } from "./rules.ts";
 import { fmtTime } from "./time.ts";
+import { beforeSend } from "./hooks.ts";
 
 interface Env {
   MOODLE_URL: string;
@@ -18,10 +19,11 @@ interface Env {
   STATE: KVNamespace;
 }
 
-// notify.toml の読み込み。誤りがあっても黙って止まらないよう、誤りの内容を覚えておいて自分に知らせる
+// 設定の解釈。誤りがあっても黙って止まらないよう、誤りの内容を覚えておいて自分に知らせる
+// (書き方の誤りの多くは、デプロイの前に build-config.mjs が見つけて止める)
 let rules: Rules;
 let configError: string | null = null;
-try { rules = parseRules(parse(configText)); }
+try { rules = parseRules(config); }
 catch (e) { configError = String(e instanceof Error ? e.message : e); rules = undefined as unknown as Rules; }
 const EXTRAS_EVERY = 3 * 3600 - 300;   // オンライン授業・お知らせの取得は約3時間に1回(1分おきの時間帯でも増やさない)
 const PENDING_TTL = 12 * 3600;         // Discord に送れなかった通知は、12時間まで(締切・公開時刻を過ぎたらそこまで)送り直す
@@ -77,7 +79,8 @@ async function flush(env: Env, state: State, now: number, fresh: Record<Channel,
   for (const ch of ["shared", "personal"] as Channel[]) {
     const keep = fresh[ch].filter((n) => !muted(rules, ch, n));      // [[mute]] で消したもの
     if (keep.length < fresh[ch].length) console.log(`[${ch}] ミュートで ${fresh[ch].length - keep.length} 件を送りませんでした`);
-    fresh[ch] = keep;
+    fresh[ch] = await beforeSend(keep, { channel: ch, now });       // 自分用のコード(custom/hooks.ts)
+    if (fresh[ch].length !== keep.length) console.log(`[${ch}] custom/hooks.ts で ${keep.length} 件 → ${fresh[ch].length} 件`);
     items[ch] = urls[ch] ? (pending[ch] ?? []).filter((p) => alive(p, now))
       .concat(fresh[ch].map((notice) => ({ at: now, notice }))) : [];
     pending[ch] = items[ch];
@@ -106,11 +109,11 @@ async function configAlert(env: Env, now: number): Promise<never> {
     st.last_config_alert = now;
     await env.STATE.put("state", JSON.stringify(st));          // 先に記録してから送る(繰り返さない)
     await send(env.PERSONAL_WEBHOOK_URL, [{
-      heading: "⚠️ notify.toml に誤りがあり、通知が止まっています", courseId: 0, course: "kadai-sentinel",
+      heading: "⚠️ 設定(notify.toml / config/)に誤りがあり、通知が止まっています", courseId: 0, course: "kadai-sentinel",
       title: (configError ?? "").slice(0, 200), url: "",
-      fields: [["対処", "notify.toml を直して、もう一度 npx wrangler deploy"]], urgent: true }]).catch(() => {});
+      fields: [["対処", "設定を直して uv run moodle config check → worker で npm run deploy"]], urgent: true }]).catch(() => {});
   }
-  throw new Error(`notify.toml の誤り: ${configError}`);
+  throw new Error(`設定の誤り: ${configError}`);
 }
 
 async function run(env: Env, force = false): Promise<string> {

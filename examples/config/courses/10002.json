@@ -1,0 +1,14 @@
+{
+  "$schema": "../../../schema/course.schema.json",
+  "_説明": "例2:レポートの授業。共有には1週間前と前日、自分には締切日の 16:30 に知らせる",
+  "id": 10002,
+  "name": "例:〇〇演習",
+  "shared": {
+    "enabled": true,
+    "events": ["new", "due_changed"],
+    "remind": ["7d", "1d"]
+  },
+  "personal": {
+    "remind": ["@16:30"]
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "$schema": "../../../../../../schema/course.schema.json",
+  "id": 10009,
+  "personal": {
+    "notify": false
+  }
+}

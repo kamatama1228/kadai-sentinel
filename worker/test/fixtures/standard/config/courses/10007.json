@@ -1,0 +1,9 @@
+{
+  "$schema": "../../../../../../schema/course.schema.json",
+  "id": 10007,
+  "personal": {
+    "remind": [
+      "@16:30"
+    ]
+  }
+}

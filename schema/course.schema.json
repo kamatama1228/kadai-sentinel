@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "授業ごとの設定(config/courses/授業ID.json)",
+  "description": "1つの授業の設定を1ファイルにまとめる。授業ID は `uv run moodle courses` で分かる。キーが _ で始まるものはメモとして無視される",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "id": {
+      "type": "integer",
+      "description": "授業ID"
+    },
+    "name": {
+      "type": "string",
+      "description": "授業名(自分が見て分かるためのもの)"
+    },
+    "shared": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "共有チャンネル(友達全員)に流すか・何を流すか。共有チャンネルを動かしている人だけが書く",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "共有チャンネル(友達全員)に流すか"
+        },
+        "events": {
+          "type": "array",
+          "description": "流すもの。new=新しく出た / scheduled=公開予定が決まった / open=受付が始まった瞬間 / due_changed=締切が変わった",
+          "items": {
+            "type": "string",
+            "enum": [
+              "new",
+              "scheduled",
+              "open",
+              "due_changed"
+            ]
+          }
+        },
+        "remind": {
+          "type": "array",
+          "description": "締切の何前に知らせるか。\"7d\" \"1d\" \"3h\" \"30m\"(締切の何前)、\"@16:30\"(締切日のその時刻)",
+          "items": {
+            "type": "string",
+            "pattern": "^(\\d+[dhm]|@\\d{1,2}:\\d{2})$",
+            "description": "締切の何前に知らせるか。\"7d\" \"1d\" \"3h\" \"30m\"(締切の何前)、\"@16:30\"(締切日のその時刻)"
+          }
+        },
+        "morning": {
+          "type": "boolean",
+          "description": "当日の朝(watch.morning_at)に「今日〇時から小テスト」と予告する"
+        },
+        "match": {
+          "type": "array",
+          "description": "名前にこれを含むものだけを対象にする(空なら全部)",
+          "items": {
+            "type": "string"
+          }
+        },
+        "kinds": {
+          "type": "array",
+          "description": "対象にする種類。既定は [\"小テスト\", \"課題\"]。\"アンケート\" \"投票\" なども指定できる",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "personal": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "自分専用チャンネルの設定",
+      "properties": {
+        "notify": {
+          "type": "boolean",
+          "description": "false にすると、この授業の個人通知を送らない"
+        },
+        "remind": {
+          "type": "array",
+          "description": "締切の何前に知らせるか。\"7d\" \"1d\" \"3h\" \"30m\"(締切の何前)、\"@16:30\"(締切日のその時刻)",
+          "items": {
+            "type": "string",
+            "pattern": "^(\\d+[dhm]|@\\d{1,2}:\\d{2})$",
+            "description": "締切の何前に知らせるか。\"7d\" \"1d\" \"3h\" \"30m\"(締切の何前)、\"@16:30\"(締切日のその時刻)"
+          }
+        }
+      }
+    },
+    "days": {
+      "type": "array",
+      "description": "授業の曜日。出欠の予定がない授業で、オンライン授業の日を決めるのに使う",
+      "items": {
+        "type": "string",
+        "enum": [
+          "mon",
+          "tue",
+          "wed",
+          "thu",
+          "fri",
+          "sat",
+          "sun"
+        ]
+      }
+    },
+    "mute": {
+      "type": "array",
+      "description": "この授業の通知のうち、消したいもの",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "通知を消すルール。書いた条件をすべて満たす通知だけが消える",
+        "properties": {
+          "channel": {
+            "type": "string",
+            "enum": [
+              "shared",
+              "personal",
+              "both"
+            ],
+            "description": "shared=共有 / personal=個人 / both=両方(既定)。shared と both は友達全員に効く"
+          },
+          "title": {
+            "type": "string",
+            "description": "課題名などにこの文字を含む"
+          },
+          "heading": {
+            "type": "string",
+            "description": "通知の見出し(「お知らせ」「締切まで」など)にこの文字を含む"
+          }
+        }
+      }
+    }
+  }
+}

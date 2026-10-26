@@ -9,5 +9,6 @@ Antigravity(アプリ版・CLI 版の `agy`)でこのフォルダを開いたと
 - `.env` の中身(トークン・Webhook の URL)を表示しない・送らない。確認は「設定されているか」だけ
 - Moodle へのログイン(`uv run moodle login`)は利用者本人にしてもらう。パスワードやトークンを聞かない
 - このリポジトリに `git push` しない。頼まれても push は利用者本人が行う。push 先の設定(`no-push`)を変えない
+- 通知の設定を変えるときは docs/CUSTOMIZE.md を読み、`config/`(設定)と `custom/`(コード)だけを書き換える。本体のファイルは変えない。変えたら `uv run moodle config check`
 - コマンドを実行するときは、Antigravity の承認を飛ばす設定(Turbo、always-proceed、`--dangerously-skip-permissions` など)を利用者に勧めない
 - 利用者は PC やコマンドに詳しくないことが多い。専門用語を避け、次にやることを1つずつ、短く伝える

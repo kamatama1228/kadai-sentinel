@@ -12,7 +12,7 @@
 ## 特徴
 
 - **見逃さない通知**:新しい課題、締切の変更、締切前のリマインド、小テストが公開されたらすぐに知らせる通知
-- **授業ごとにルールを決められる**:何を・いつ知らせるかを `notify.toml` に書くだけ(「1 週間前と前日」「締切日の 16:30」なども可)
+- **授業ごとにルールを決められる**:何を・いつ知らせるかを `config/courses/授業ID.json` に書くだけ(「1 週間前と前日」「締切日の 16:30」なども可)
 - **共有と個人を分ける**:友達との共有チャンネルには授業の情報だけを流し、自分の提出状況は自分専用のチャンネルにだけ届く
 - **大学のサーバーに負担をかけない**:Moodle を確認するのはふだん 1 日 2 回。短い小テストがある時間帯だけ 1 分おき
 - **24 時間・無料**:Cloudflare Workers の無料枠で動く。PC を閉じていても届く
@@ -26,7 +26,7 @@
 flowchart LR
     M[(Moodle<br/>Web サービス)] -->|課題・小テスト・締切| C[core<br/>取得と整形]
     C --> CLI[CLI<br/>uv run moodle ...]
-    C --> N[通知の判定<br/>notify.toml のルール]
+    C --> N[通知の判定<br/>config/ のルール]
     N -->|共有チャンネル| D1[Discord<br/>友達と]
     N -->|個人チャンネル| D2[Discord<br/>自分だけ]
     CLI --> AI[手元の AI<br/>Claude / Codex / Antigravity]
@@ -90,8 +90,10 @@ SSO(学認・Microsoft アカウントなど)でログインする大学では�
 ## Discord 通知
 
 1. Discord のチャンネル設定 →「連携サービス」→「ウェブフック」で URL を作り、`.env` に書く(共有用 `DISCORD_WEBHOOK_URL`、自分用 `PERSONAL_WEBHOOK_URL`)
-2. `cp notify.example.toml notify.toml` でコピーして、授業ごとのルールを書く(書き方はファイル内のコメント)
-   - 自分用の細かい調整(通知を消す・オンライン授業・お知らせなど)は [docs/CUSTOMIZE.md](docs/CUSTOMIZE.md)
+2. 授業ごとのルールを `config/` に書く(`uv run moodle config add-course 授業ID` でひな形ができる。例は `examples/config/`)
+   - 書ける項目と書き方は [docs/CUSTOMIZE.md](docs/CUSTOMIZE.md)。書いたら `uv run moodle config check`
+   - 設定ではできないこと(文面を変えるなど)は `custom/` に自分用のコードを置ける([docs/EXTEND.md](docs/EXTEND.md))
+   - `config/` と `custom/` は Git に入らないので、本体を更新してもぶつからない。昔の `notify.toml` もそのまま使える
 
 ### Cloudflare Workers で 24 時間動かす(無料)
 
@@ -101,19 +103,22 @@ npm install
 npx wrangler login
 cp wrangler.example.toml wrangler.toml
 npx wrangler kv namespace create STATE    # 表示された id を wrangler.toml に書く
-npx wrangler deploy
+npm run deploy                            # 設定をまとめてからデプロイする
 npm run secrets                           # .env の値を Cloudflare に登録(画面には出ない)
 ```
 
-1 分おきに起動しますが、Moodle を確認するのは決めた時刻だけで、それ以外はすぐ終わります(無料枠の約 1.4%)。`notify.toml` を変えたら `npx wrangler deploy` で反映します。
+1 分おきに起動しますが、Moodle を確認するのは決めた時刻だけで、それ以外はすぐ終わります(無料枠の約 1.4%)。設定を変えたら `npm run deploy` で反映します(設定に誤りがあればデプロイせずに止まります。`npx wrangler deploy` を直接使うと設定が反映されません)。
 
-### PC で動かす(Windows)
+通知は Cloudflare 版だけで動きます(PC で常駐させる版は 1.0.0 で終わりました。理由は [CHANGELOG.md](CHANGELOG.md))。
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\install-watch.ps1
+## 更新するとき
+
+```bash
+git pull
+uv run moodle whatsnew     # 何が変わったか・更新したらやること
 ```
 
-ログオン時に自動で起動します。Cloudflare 版と同時に動かすと通知が二重に届くので、どちらか一方だけにしてください。
+変更の記録は [CHANGELOG.md](CHANGELOG.md)。本体を直す人は、変える前と後に `cd worker` → `npm test` で、通知の届き方が壊れていないかを確かめてください。
 
 ## 設計
 

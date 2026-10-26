@@ -1,0 +1,241 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "kadai-sentinel 全体の設定(config/settings.json)",
+  "description": "授業ごとの設定は config/courses/授業ID.json に書く。ここには全体に関わる設定だけを書く。キーが _ で始まるものはメモとして無視される",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "default": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "授業ファイルに書かなかった項目の既定値(共有チャンネル用)",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "共有チャンネル(友達全員)に流すか"
+        },
+        "events": {
+          "type": "array",
+          "description": "流すもの。new=新しく出た / scheduled=公開予定が決まった / open=受付が始まった瞬間 / due_changed=締切が変わった",
+          "items": {
+            "type": "string",
+            "enum": [
+              "new",
+              "scheduled",
+              "open",
+              "due_changed"
+            ]
+          }
+        },
+        "remind": {
+          "type": "array",
+          "description": "締切の何前に知らせるか。\"7d\" \"1d\" \"3h\" \"30m\"(締切の何前)、\"@16:30\"(締切日のその時刻)",
+          "items": {
+            "type": "string",
+            "pattern": "^(\\d+[dhm]|@\\d{1,2}:\\d{2})$",
+            "description": "締切の何前に知らせるか。\"7d\" \"1d\" \"3h\" \"30m\"(締切の何前)、\"@16:30\"(締切日のその時刻)"
+          }
+        },
+        "morning": {
+          "type": "boolean",
+          "description": "当日の朝(watch.morning_at)に「今日〇時から小テスト」と予告する"
+        },
+        "match": {
+          "type": "array",
+          "description": "名前にこれを含むものだけを対象にする(空なら全部)",
+          "items": {
+            "type": "string"
+          }
+        },
+        "kinds": {
+          "type": "array",
+          "description": "対象にする種類。既定は [\"小テスト\", \"課題\"]。\"アンケート\" \"投票\" なども指定できる",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "watch": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Moodle を確認する時刻。大学のサーバーに負担をかけないよう、上限がある",
+      "properties": {
+        "schedule": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "type": "string",
+            "pattern": "^\\d{1,2}:\\d{2}$",
+            "description": "ふだん確認する時刻(1日 12 回まで)。例 [\"10:00\", \"22:00\"]"
+          },
+          "description": "ふだん確認する時刻(1日 12 回まで)。例 [\"10:00\", \"22:00\"]"
+        },
+        "morning_at": {
+          "type": "string",
+          "pattern": "^\\d{1,2}:\\d{2}$",
+          "description": "朝の予告・オンライン授業の通知を送る時刻"
+        },
+        "fast": {
+          "type": "string",
+          "pattern": "^\\d+[dhm]$",
+          "description": "短い間隔で確認するときの間隔(1m 以上)"
+        },
+        "utc_offset": {
+          "type": "number",
+          "description": "日本なら 9"
+        },
+        "fast_windows": {
+          "type": "array",
+          "description": "短い間隔で確認する時間帯(1つ 4 時間まで)",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "days": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "mon",
+                    "tue",
+                    "wed",
+                    "thu",
+                    "fri",
+                    "sat",
+                    "sun"
+                  ]
+                }
+              },
+              "start": {
+                "type": "string",
+                "pattern": "^\\d{1,2}:\\d{2}$"
+              },
+              "end": {
+                "type": "string",
+                "pattern": "^\\d{1,2}:\\d{2}$"
+              },
+              "note": {
+                "type": "string",
+                "description": "メモ(授業名など)"
+              }
+            }
+          }
+        }
+      }
+    },
+    "personal": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "自分専用チャンネルの設定",
+      "properties": {
+        "remind": {
+          "type": "array",
+          "description": "締切の何前に知らせるか。\"7d\" \"1d\" \"3h\" \"30m\"(締切の何前)、\"@16:30\"(締切日のその時刻)",
+          "items": {
+            "type": "string",
+            "pattern": "^(\\d+[dhm]|@\\d{1,2}:\\d{2})$",
+            "description": "締切の何前に知らせるか。\"7d\" \"1d\" \"3h\" \"30m\"(締切の何前)、\"@16:30\"(締切日のその時刻)"
+          }
+        },
+        "mirror_shared": {
+          "type": "boolean",
+          "description": "共有チャンネルの通知を個人チャンネルにも送る"
+        },
+        "mirror_skip_submitted": {
+          "type": "boolean",
+          "description": "転送する締切リマインドのうち、提出済みのものは送らない"
+        },
+        "changes": {
+          "type": "boolean",
+          "description": "共有にない授業の締切が変わったら知らせる"
+        },
+        "news": {
+          "type": "string",
+          "enum": [
+            "keywords",
+            "all",
+            "off"
+          ],
+          "description": "共有にない授業の「お知らせ」。keywords=休講などだけ / all=全部 / off=送らない"
+        },
+        "news_keywords": {
+          "type": "array",
+          "description": "news が keywords のときに使う語",
+          "items": {
+            "type": "string"
+          }
+        },
+        "exclude": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          },
+          "description": "個人通知もいらない授業のID(授業ファイルの personal.notify=false でも同じ)"
+        }
+      }
+    },
+    "online": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "オンライン授業(Zoom などのリンクが置かれた回)を、その日の朝に知らせる",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "shared": {
+          "type": "boolean",
+          "description": "共有チャンネルの授業は共有にも流す"
+        },
+        "keywords": {
+          "type": "array",
+          "description": "リンク名にこれを含むとオンライン授業",
+          "items": {
+            "type": "string"
+          }
+        },
+        "exclude": {
+          "type": "array",
+          "description": "これを含むものは除く(録画など)",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "mute": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "通知を消すルール。書いた条件をすべて満たす通知だけが消える",
+        "properties": {
+          "course": {
+            "type": "integer",
+            "description": "授業ID"
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "shared",
+              "personal",
+              "both"
+            ],
+            "description": "shared=共有 / personal=個人 / both=両方(既定)。shared と both は友達全員に効く"
+          },
+          "title": {
+            "type": "string",
+            "description": "課題名などにこの文字を含む"
+          },
+          "heading": {
+            "type": "string",
+            "description": "通知の見出し(「お知らせ」「締切まで」など)にこの文字を含む"
+          }
+        }
+      }
+    }
+  }
+}

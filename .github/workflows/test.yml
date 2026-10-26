@@ -1,0 +1,26 @@
+# 本体を直したら、GitHub 上でもテストを自動で動かす(通知の届き方・設定のまとめ方が壊れていないか)
+name: test
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 通知と設定のテスト
+        working-directory: worker
+        run: |
+          npm ci
+          npm test
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: コマンドが動くか(Moodle には接続しない)
+        run: |
+          pip install requests
+          python -m compileall -q core cli
+          python -c "import sys; sys.argv=['moodle','--version']; import cli.main as m; m.main()"

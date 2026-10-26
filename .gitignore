@@ -3,6 +3,8 @@
 .env.*
 !.env.example
 notify.toml
+/config/
+/custom/
 worker/wrangler.toml
 *.local.*
 .denylist

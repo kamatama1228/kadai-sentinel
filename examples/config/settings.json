@@ -1,0 +1,24 @@
+{
+  "$schema": "../../schema/settings.schema.json",
+  "_説明": "全体の設定。授業ごとの設定は courses/授業ID.json に書く。_ で始まる項目はメモとして無視される",
+  "watch": {
+    "utc_offset": 9,
+    "schedule": ["10:00", "22:00"],
+    "fast": "1m",
+    "morning_at": "07:30",
+    "fast_windows": [
+      { "days": ["thu"], "start": "13:00", "end": "15:00", "note": "例:〇〇概論(授業中に小テストがある)" }
+    ]
+  },
+  "personal": {
+    "remind": ["1d", "3h"],
+    "mirror_shared": false,
+    "mirror_skip_submitted": true,
+    "changes": true,
+    "news": "keywords"
+  },
+  "online": {
+    "enabled": true,
+    "shared": true
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "$schema": "../../../schema/course.schema.json",
+  "_説明": "例3:共有には流さず、自分の通知も「お知らせ」だけ消したい授業",
+  "id": 10003,
+  "name": "例:〇〇実験",
+  "personal": {
+    "notify": true,
+    "remind": ["3d", "1d"]
+  },
+  "mute": [
+    { "channel": "personal", "heading": "お知らせ" }
+  ]
+}

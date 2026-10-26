@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../../../../schema/course.schema.json",
+  "id": 10001,
+  "name": "科目A",
+  "shared": {
+    "enabled": true,
+    "events": [
+      "new",
+      "scheduled",
+      "open",
+      "due_changed"
+    ],
+    "remind": [],
+    "morning": true
+  }
+}

@@ -1,4 +1,4 @@
-// 何をいつ通知するかを決める(PC 版 notifier/run.py と同じ判定)
+// 何をいつ通知するかを決める
 import { isOpen, windowText, type Activity, type NewsItem, type Task, type UrlItem } from "./moodle.ts";
 import { courseRule, inWindow, isOnlineName, personalFor, personalSkips, sharedIds, wants, type CourseRule, type Rules } from "./rules.ts";
 import { dateKey, fmtTime, fromLocal, hm, human, local, parseDuration, remaining } from "./time.ts";

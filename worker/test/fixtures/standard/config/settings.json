@@ -1,0 +1,39 @@
+{
+  "$schema": "../../../../../schema/settings.schema.json",
+  "_説明": "テスト用の架空の設定(実際の授業とは関係ない)",
+  "default": {
+    "enabled": false
+  },
+  "personal": {
+    "mirror_shared": true,
+    "mirror_skip_submitted": true,
+    "changes": true,
+    "news": "keywords",
+    "remind": [
+      "1d",
+      "3h"
+    ]
+  },
+  "online": {
+    "enabled": true,
+    "shared": true
+  },
+  "watch": {
+    "schedule": [
+      "10:00",
+      "22:00"
+    ],
+    "fast": "1m",
+    "morning_at": "07:30",
+    "fast_windows": [
+      {
+        "days": [
+          "thu"
+        ],
+        "start": "13:00",
+        "end": "15:00",
+        "note": "科目A"
+      }
+    ]
+  }
+}

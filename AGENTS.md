@@ -25,18 +25,34 @@
 - **Moodle に何かを書き込む操作は、このツールにはない。** 課題の提出は、利用者が Moodle の画面で行う。
 - 大学のサーバーに負荷をかけないよう、同じコマンドを短い間隔で何度も実行しない。
 - `addons/` に追加機能が入っている場合は、その中の `AGENTS.md` も読み、そこに書かれたルールに従う。
-- `notify.toml` を編集したら、Cloudflare 版を使っている場合は `cd worker && npx wrangler deploy` が必要だと利用者に伝える。
+- 設定(`config/` や `notify.toml`)や `custom/` を変えたら、Cloudflare 版を使っている場合は `cd worker && npm run deploy` が必要だと利用者に伝える(`npx wrangler deploy` を直接使うと設定が反映されない)。
 
 ## 通知の設定を変えてと頼まれたら
 
-書ける項目と書き方は **docs/CUSTOMIZE.md** にある。変える前に必ず読む。
+書ける項目と書き方は **docs/CUSTOMIZE.md** にある。変える前に必ず読む。項目の正確な形は `schema/*.schema.json`。
 
-- **変えるのは `notify.toml` だけ。** 「この授業の通知はいらない」「朝の時刻を変えたい」などは、まず `notify.toml` の項目か `[[mute]]` でできないか考える。コード(`worker/` `notifier/` `core/`)は、利用者がはっきり望んだときだけ、docs/CUSTOMIZE.md の「3. コードを変えたいとき」の手順(自分用のブランチ)で変える
-- **変える前に `notify.toml` を `state/notify.toml.bak` にコピーする**(`state/` は Git に入らない)。うまくいかなければ戻す
-- **共有チャンネル(友達全員)に影響する変更は、共有チャンネルを動かしている本人か確認してからにする。** `[course.ID]` の変更、`channel = "shared"` / `"both"` の `[[mute]]`、`[online]` の `shared` など
+- **自分用のものは `config/`(設定)と `custom/`(コード)だけに書く。** どちらも Git に入らないので、本体の更新とぶつからない。本体のファイル(`worker/` `core/` `cli/` `schema/`)は変えない
+  - 授業ごとの設定 → `config/courses/授業ID.json`(1授業1ファイル。なければ `uv run moodle config add-course 授業ID` で作る)
+  - 全体の設定(確認の時刻、朝の時刻、お知らせなど)→ `config/settings.json`
+  - 通知を消す → 授業ファイルか `config/settings.json` の `mute`
+  - 設定ではできないこと(文面を変えるなど)→ `custom/hooks.ts`(書き方は **docs/EXTEND.md**)。それでも無理なら本体の変更になるので、利用者に「本体の持ち主に相談する」よう伝える
+- 利用者が `notify.toml` を使っている場合は、`notify.toml` を書き換えてもよい(`config/` が上書きする)。`config/` に移すかは利用者に聞く(`uv run moodle config migrate`。勝手に実行しない)
+- **変える前に、変えるファイルを `state/` にコピーする**(`state/` は Git に入らない)。うまくいかなければ戻す
+- **変えたら必ず `uv run moodle config check` を実行し、`uv run moodle config show 授業` で思ったとおりになったか確かめる。** 誤りが出たら直してから終える
+- **共有チャンネル(友達全員)に影響する変更は、共有チャンネルを動かしている本人か確認してからにする。** 授業ファイルの `shared`、`channel` が `"shared"` / `"both"` の `mute`、`online.shared`、`custom/` で共有チャンネルの通知を変えるもの など
 - **確認の間隔を短くする変更(`fast`、`fast_windows`、`schedule` を増やす)は、大学のサーバーに負担がかかるので勧めない。** 上限を超える書き方はエラーになる
 - `.env` の Webhook(特に共有チャンネルの `DISCORD_WEBHOOK_URL`)を書き換えたり、別の人の `.env` に入れたりしない
-- 変えたら、何をどう変えたかを短く伝える。Cloudflare 版を使っている場合は `cd worker` → `npx wrangler deploy` が必要だと伝える。書き方に誤りがあると、通知が止まる代わりに個人チャンネルに「notify.toml に誤りがあります」と届くので、届いたら直す
+- 変えたら、何をどう変えたかを短く伝える。Cloudflare 版を使っている場合は `cd worker` → `npm run deploy` が必要だと伝える(設定に誤りがあればそこで止まり、動いている版はそのまま)。誤りがすり抜けると、個人チャンネルに「設定に誤りがあり、通知が止まっています」と届くので、届いたら直す
+
+## 更新(git pull)のとき
+
+- `git pull` のあとは必ず `uv sync` と `uv run moodle whatsnew` を実行し、何が変わったかと「更新したらやること」を利用者に短く伝える。やることがあれば、1つずつ一緒に進める
+- 設定のコマンド(`uv run moodle config ...`)は Node.js 22.6 以上を使う。入っていないと言われたら、利用者に入れ方を伝える(Cloudflare 版を使わない人には不要)
+
+## 本体を直すとき(本体の持ち主が頼んだときだけ)
+
+- 変える前と後に `cd worker` → `npm test` を実行し、全部通ることを確かめる。新しい動きにはテストを足す(テストは架空の授業で書き、本物の授業名や ID を入れない)
+- 変えたら CHANGELOG.md に1行で書く。利用者の操作が必要な変更(設定の形が変わる、コマンドが変わる、`custom/` の書き方が変わる)は「更新したらやること」に書き、バージョンを上げる(`pyproject.toml`・`worker/package.json`・CHANGELOG.md の3か所。テストがそろっているかを確かめる)
 
 ## 利用者への伝え方
 

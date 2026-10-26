@@ -1,4 +1,4 @@
-// 現地時刻の表示と計算。Workers の時計は UTC なので、notify.toml の [watch] utc_offset(既定 9 = 日本)だけずらして扱う。
+// 現地時刻の表示と計算。Workers の時計は UTC なので、設定の watch.utc_offset(既定 9 = 日本)だけずらして扱う。
 // サマータイムのある地域には対応していない。
 export let TZ_OFFSET = 9 * 3600;
 export function setUtcOffset(hours: number) { TZ_OFFSET = hours * 3600; }

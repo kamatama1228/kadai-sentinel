@@ -13,11 +13,8 @@ crons = ["* * * * *"]
 binding = "STATE"
 id = "ここに_KV_の_id"
 
-# notify.toml を文字列として読み込む
-[[rules]]
-type = "Text"
-globs = ["**/*.toml"]
-fallthrough = true
+# 設定(notify.toml / config/)は `npm run deploy` のときに .generated/config.json にまとめて読み込む
+# (`npx wrangler deploy` を直接使うと、設定の変更が反映されないので使わない)
 
 [observability]
 enabled = true

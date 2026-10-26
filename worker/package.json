@@ -1,9 +1,16 @@
 {
   "name": "kadai-sentinel-worker",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22.6"
+  },
   "scripts": {
-    "deploy": "wrangler deploy",
+    "test": "node test/run.mjs",
+    "check": "node scripts/build-config.mjs --check",
+    "build:config": "node scripts/build-config.mjs",
+    "deploy": "node scripts/build-config.mjs && wrangler deploy",
     "secrets": "node scripts/push-secrets.mjs",
     "tail": "wrangler tail --format pretty"
   },

@@ -1,4 +1,5 @@
-// notify.toml(授業ごとの通知ルール)の解釈。PC 版(Python)と同じファイルを使う。
+// 通知ルールの解釈。設定(notify.toml / config/)を1つにまとめたもの(worker/scripts/config-lib.mjs)を受け取る。
+// 設定の解釈はここだけにある(デプロイ・`uv run moodle config`・テストが同じものを使う)。
 import { fromLocal, hm, parseDuration, setUtcOffset, type Local } from "./time.ts";
 
 const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
@@ -154,8 +155,9 @@ export function parseRules(data: any): Rules {
     default: def, courses,
     personalRemind: checkRemind(personal.remind ?? ["1d", "3h"]),
     personalExclude: new Set((personal.exclude ?? []).map(Number)),
-    personalCourses: new Map(Object.entries(personal.course ?? {})
-      .map(([k, v]: [string, any]) => [Number(k), checkRemind(v.remind ?? [])])),
+    // remind を書いた授業だけ(曜日だけを書いた授業は、個人のリマインドが既定のまま)
+    personalCourses: new Map(Object.entries(personal.course ?? {}).filter(([, v]: [string, any]) => v.remind !== undefined)
+      .map(([k, v]: [string, any]) => [Number(k), checkRemind(v.remind)])),
     personalMirror: Boolean(personal.mirror_shared ?? false),
     mirrorSkipSubmitted: Boolean(personal.mirror_skip_submitted ?? true),
     manual: (data.event ?? []).map((e: any) => ({

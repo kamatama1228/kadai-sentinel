@@ -13,7 +13,7 @@ Moodle の課題・小テスト・締切・配布資料を取得し、
 
 1. **読み取り専用**:Moodle には何も書き込まない。提出は利用者が Moodle の画面で行う。
 2. **各自が自分のトークンで動かす**:中央サーバーを置かない。認証情報は本人だけが管理する場所(PC の `.env`、本人の Cloudflare の Secrets)に置く。
-3. **大学固有の値は設定だけに置く**:URL・授業ID・時間割をコードに書かない。個人設定(`.env`・`notify.toml`)は Git に入れない。
+3. **大学固有の値は設定だけに置く**:URL・授業ID・時間割をコードに書かない。個人設定(`.env`・`config/`・`custom/`・`notify.toml`)は Git に入れない。
 4. **コアは1つ、窓口は複数**:Moodle との通信と整形は `core/` に集約し、CLI・通知はその薄いラッパーにする。
 5. **大学のサーバーに優しく**:ふだんは1日数回だけ確認し、必要な時刻・時間帯だけ間隔を短くする。
 6. **資料と状態は非公開**:授業資料・通知の状態・提出状況は、公開リポジトリにも、履修者以外がいる場所にも出さない。
@@ -23,9 +23,11 @@ Moodle の課題・小テスト・締切・配布資料を取得し、
 ```
 core/       Moodle 通信(トークン、Web サービス呼び出し)と、Task / Activity への整形
 cli/        `uv run moodle ...` のコマンド(人と AI エージェントの窓口)
-notifier/   通知の判定と Discord 送信(PC で動かす版)
-worker/     通知の Cloudflare Workers 版(TypeScript。判定は notifier/ と同じ)
-scripts/    Windows で PC 版を常駐させるスクリプト
+worker/     通知(Cloudflare Workers。TypeScript)。通知の判定・設定の解釈はここだけにある
+  scripts/  設定のまとめ(build-config.mjs)と設定のコマンド(config-cli.mjs)
+  test/     通知と設定のテスト(npm test)。架空の授業で動かす
+schema/     設定ファイルの形(JSON Schema)
+examples/   設定(config/)と自分用のコード(custom/)のひな形
 AGENTS.md   AI エージェント向けの使い方とルール(CLAUDE.md・GEMINI.md から参照)
 ```
 
@@ -52,7 +54,7 @@ AGENTS.md   AI エージェント向けの使い方とルール(CLAUDE.md・GEMI
 
 |  | 共有チャンネル | 個人チャンネル |
 | --- | --- | --- |
-| 内容 | `notify.toml` で有効にした授業の課題・小テスト | 自分の未提出課題のリマインド |
+| 内容 | 設定(`config/`)で有効にした授業の課題・小テスト | 自分の未提出課題のリマインド |
 | 情報源 | 授業の課題・小テスト一覧(提出状況と無関係) | やること一覧 |
 | 設定 | `DISCORD_WEBHOOK_URL` | `PERSONAL_WEBHOOK_URL` |
 
@@ -88,7 +90,8 @@ AGENTS.md   AI エージェント向けの使い方とルール(CLAUDE.md・GEMI
 | 場所 | 特徴 |
 | --- | --- |
 | Cloudflare Workers(推奨) | 無料、24時間。1分おきの Cron で起動し、KV に保存した「次に確認する時刻」のときだけ Moodle を確認する(起動は1日約1,440回で、無料枠の約1.4%) |
-| PC(`uv run moodle watch`) | 手軽。PC が止まると通知も止まる。二重起動はロックファイルで防ぐ |
+
+PC で常駐させる版(Python)は 1.0.0 でやめた。同じ判定を Python と TypeScript の2か所に書くと、片方だけ直してずれる危険があり、実際に PC 版だけ機能が足りなくなっていたため。Python は「Moodle を読むコマンド(人と AI の窓口)」に専念し、通知の判定と設定の解釈は TypeScript の1か所だけにする。`uv run moodle config ...` も、中で Node.js の `worker/scripts/config-cli.mjs` を呼ぶ。
 
 ## AI との連携
 
@@ -96,13 +99,33 @@ AGENTS.md   AI エージェント向けの使い方とルール(CLAUDE.md・GEMI
 - `AGENTS.md` には、トークンを表示しない、ログインは本人が行う、Discord 投稿は確認してから、資料を外部に出さない、などのルールを書く
 - 将来、チャットアプリからも使えるように MCP サーバーを用意することを検討する
 
-## 拡張
+## 設定と拡張(本体を直し続けても、各自の変更とぶつからないように)
+
+このツールは本体を直しながら育てていく前提で作る。各自の変更は Git に入らない2つのフォルダだけに置き、本体のファイルは誰も書き換えない。
+
+| 層 | 場所 | Git | 中身 |
+| --- | --- | --- | --- |
+| 本体 | `core/` `cli/` `worker/` `schema/` | 入る | コードと、設定の形(JSON Schema) |
+| 例 | `examples/config/` `examples/custom/` | 入る | ひな形 |
+| 各自の設定 | `config/settings.json` `config/courses/授業ID.json` `config/events/*.json` | 入らない | 1授業1ファイル。人も AI もどこを触ればよいか分かる |
+| 各自のコード | `custom/hooks.ts` | 入らない | 送る直前の通知を書き換える拡張口(docs/EXTEND.md) |
+| 昔の設定 | `notify.toml` | 入らない | そのまま使える。`config migrate` で config/ に移せる |
+
+- 設定は「既定値 → notify.toml → settings.json → courses/*.json → events/*.json」の順に重ねる(あとが勝つ。オブジェクトは中身ごと、配列は置き換え、mute と events は足す)。まとめる処理は `worker/scripts/config-lib.mjs`、解釈は `worker/src/rules.ts` の1か所だけで、Cloudflare 版・コマンド・テストが同じものを使う
+- 設定の形は `schema/*.schema.json` が唯一の定義。エディタの補完、`config check` の検査(知らない項目は近い名前を提案)、AI が読む資料を兼ねる
+- Cloudflare 版は実行時にファイルを読めないので、`npm run deploy` のときに `build-config.mjs` が設定を `worker/.generated/config.json` にまとめ、`custom/hooks.ts` を取り込む。設定に誤りがあればここで止まり、デプロイしない
+- 自分用のコードが失敗したら、その回は元の通知を送る(壊れても通知は止まらない)。拡張口の形は `HOOKS_API` の数字で管理する
+
+### 追加機能(別配布)
 
 `cli/main.py` は、`moodle_tool_addons` という別パッケージがインストールされていれば、そのコマンドを追加で読み込む。本体は読み取り専用のまま、追加機能を別に配布できる。
 
 ## 公開・配布
 
-- リポジトリに含めない:`.env`、`notify.toml`、`state/`、`materials/`、`submissions/`
+この公開版は、作者の手元の版から、特定の大学・個人に関わるもの(導入手順・追加機能・設定)を除いて書き出したもの。直すときは手元の版で直してテストし、書き出し直す。
+
+
+- リポジトリに含めない:`.env`、`config/`、`custom/`、`notify.toml`、`state/`、`materials/`、`submissions/`
 - 公開前に、利用する大学の規約で API・外部ツールの扱いを確認する
 - ライセンス:MIT
 - 名前に「Moodle」を使わない(Moodle は Moodle Pty Ltd の商標)

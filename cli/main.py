@@ -8,9 +8,10 @@
   uv run moodle tasks          やること一覧(未提出の課題・小テスト)を表示
   uv run moodle courses        履修中の授業一覧
   uv run moodle files          配布資料を materials/ にダウンロード(更新分のみ)
-  uv run moodle notify         1回だけ確認して Discord に通知
-  uv run moodle watch          常駐して通知を続ける
+  uv run moodle notify --test  Discord に見本の通知を送って、Webhook を確かめる
+  uv run moodle whatsnew       更新(git pull)で何が変わったか・やることを表示
   uv run moodle assign 名前    課題の設定と自分の提出状況を表示
+  uv run moodle config ...     設定ファイル(config/)の検査・表示・作成(check / show / add-course / migrate)
 """
 
 from __future__ import annotations
@@ -249,11 +250,19 @@ def _env_or_exit() -> dict[str, str]:
     return env
 
 
+PC_NOTIFY_ENDED = ("PC で動かす通知(notify / watch)は 1.0.0 で終わりました。通知は Cloudflare 版だけになります。\n"
+                   "Cloudflare 版の始め方は README の「Cloudflare Workers で 24 時間動かす」。\n"
+                   "PC 版を自動起動にしていた人は、PowerShell で次を実行して登録を消してください:\n"
+                   "  Unregister-ScheduledTask -TaskName moodle-watch -Confirm:$false")
+
+
 def cmd_notify(args: argparse.Namespace) -> int:
+    if not args.test:
+        print(PC_NOTIFY_ENDED, file=sys.stderr)
+        return 1
     env = _env_or_exit()
     if args.test:
-        from core.activities import fmt_time
-        from notifier.discord import Notice, send
+        from core.discord import Notice, send
         url = env.get("PERSONAL_WEBHOOK_URL" if args.test == "personal" else "DISCORD_WEBHOOK_URL")
         if not url:
             sys.exit("Webhook の URL が .env に設定されていません。")
@@ -261,25 +270,17 @@ def cmd_notify(args: argparse.Namespace) -> int:
                           "(テスト)第3回授業小テスト", env["MOODLE_URL"],
                           [("受付", "10/15(木) 14:35〜14:44"), ("残り", "あと 9 分")], urgent=True)])
         print("テスト投稿を送りました。Discord を確認してください。")
-        return 0
-    from notifier.run import run_once
-    run_once(env, dry_run=args.dry_run, init=args.init)
     return 0
 
 
 def cmd_watch(args: argparse.Namespace) -> int:
-    import logging
-    from logging.handlers import RotatingFileHandler
-    from pathlib import Path
-    from notifier.run import watch
-    Path("state").mkdir(exist_ok=True)
-    handlers: list[logging.Handler] = [RotatingFileHandler("state/watch.log", maxBytes=1_000_000,
-                                                           backupCount=2, encoding="utf-8")]
-    if sys.stdout is not None:                     # pythonw で起動したときは画面がない
-        handlers.append(logging.StreamHandler(sys.stdout))
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", handlers=handlers)
-    watch(_env_or_exit(), log=logging.info)
-    return 0
+    print(PC_NOTIFY_ENDED, file=sys.stderr)
+    return 1
+
+
+def cmd_whatsnew(args: argparse.Namespace) -> int:
+    from cli.whatsnew import show
+    return show(all_versions=args.all)
 
 
 def _pick_assignment(client, query: str):
@@ -326,6 +327,8 @@ def cmd_check(args: argparse.Namespace) -> int:
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="moodle", description="Moodle 連携ツール")
+    from cli.whatsnew import version
+    parser.add_argument("--version", action="version", version=f"kadai-sentinel {version()}")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_login = sub.add_parser("login", help="トークンを取得して .env に保存")
@@ -356,19 +359,24 @@ def main() -> None:
     p_files.add_argument("--dry-run", action="store_true", help="取得せずに一覧だけ表示")
     p_files.set_defaults(func=cmd_files)
 
-    p_notify = sub.add_parser("notify", help="Discord に差分を通知")
-    p_notify.add_argument("--dry-run", action="store_true", help="送信も状態の保存もせずに内容だけ表示")
-    p_notify.add_argument("--init", action="store_true", help="現在の一覧を記録するだけで通知しない")
+    p_notify = sub.add_parser("notify", help="Discord に見本の通知を送る(--test personal / shared)")
     p_notify.add_argument("--test", nargs="?", const="shared", choices=["shared", "personal"],
-                          help="直近の課題1件をサンプルとしてテスト投稿する")
+                          help="見本の通知を送って Webhook を確かめる")
     p_notify.set_defaults(func=cmd_notify)
 
     p_assign = sub.add_parser("assign", help="課題の設定と提出状況を表示")
     p_assign.add_argument("query", help="課題ID か 名前(授業名を含めてもよい)")
     p_assign.set_defaults(func=cmd_assign)
 
-    p_watch = sub.add_parser("watch", help="常駐して通知を続ける(notify.toml の間隔で確認)")
+    p_watch = sub.add_parser("watch", help="(終了しました。通知は Cloudflare 版を使う)")
     p_watch.set_defaults(func=cmd_watch)
+
+    p_new = sub.add_parser("whatsnew", help="更新(git pull)で何が変わったか・やることを表示")
+    p_new.add_argument("--all", action="store_true", help="これまでの更新をすべて表示")
+    p_new.set_defaults(func=cmd_whatsnew)
+
+    from cli.config_cmd import register as register_config
+    register_config(sub)
 
     # 追加機能(別配布)があれば、そのコマンドを登録する。
     # インストール済みのパッケージか、このリポジトリの addons/ フォルダに置いたものを探す。

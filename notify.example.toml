@@ -1,4 +1,6 @@
 # 通知のルール(授業ごと)
+# ※ 今は config/ フォルダの JSON(授業ごとに1ファイル)で書くのがおすすめ。書き方は docs/CUSTOMIZE.md、例は examples/config/
+#    この notify.toml の書き方も、これまでどおり使える(config/ があればそちらが上書きする)。
 # このファイルを notify.toml にコピーして使う:  cp notify.example.toml notify.toml
 # notify.toml は授業IDや時間割を含む個人設定なので Git には入らない。
 # 授業IDは `uv run moodle courses` で確認できる。

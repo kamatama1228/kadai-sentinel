@@ -1,0 +1,12 @@
+{
+  "$schema": "../../../schema/course.schema.json",
+  "_説明": "例1:授業中に短時間だけ公開される小テストがある授業。共有チャンネルに流す",
+  "id": 10001,
+  "name": "例:〇〇概論",
+  "shared": {
+    "enabled": true,
+    "events": ["new", "scheduled", "open", "due_changed"],
+    "morning": true
+  },
+  "days": ["thu"]
+}
