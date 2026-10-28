@@ -1,6 +1,6 @@
 [project]
 name = "kadai-sentinel"
-version = "1.0.0"
+version = "1.0.1"
 description = "課題の見張り番: Moodle の課題・締切・小テストを見張って Discord に通知し、手元の AI から読めるようにする"
 readme = "README.md"
 requires-python = ">=3.11"

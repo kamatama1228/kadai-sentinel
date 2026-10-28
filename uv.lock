@@ -168,8 +168,8 @@ wheels = [
 ]
 
 [[package]]
-name = "moodle-tool"
-version = "0.1.0"
+name = "kadai-sentinel"
+version = "1.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "requests" },
